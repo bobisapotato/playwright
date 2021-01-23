@@ -10,9 +10,12 @@ assignees: ''
 **Context:**
 - Playwright Version: [what Playwright version do you use?]
 - Operating System: [e.g. Windows, Linux or Mac]
-- Node version: [e.g. 10.12, 10.14]
+- Node.js version: [e.g. 10.12, 10.14]
 - Browser: [e.g. All, Chromium, Firefox, WebKit]
 - Extra: [any specific details about your environment]
+
+<!-- CLI to auto-capture this info -->
+<!-- npx envinfo --preset playwright -->
 
 **Code Snippet**
 
@@ -24,7 +27,7 @@ const {chromium, webkit, firefox} = require('playwright');
 
 (async () => {
   const browser = await chromium.launch();
-  // ... 
+  // ...
 })();
 ```
 

@@ -24,6 +24,10 @@ class FrameTree {
     this._browsingContextGroup.__jugglerFrameTrees.add(this);
     this._scriptsToEvaluateOnNewDocument = new Map();
 
+    this._webSocketEventService = Cc[
+      "@mozilla.org/websocketevent/service;1"
+    ].getService(Ci.nsIWebSocketEventService);
+
     this._bindings = new Map();
     this._runtime = new Runtime(false /* isWorker */);
     this._workers = new Map();
@@ -53,6 +57,7 @@ class FrameTree {
                   Ci.nsIWebProgress.NOTIFY_FRAME_LOCATION;
     this._eventListeners = [
       helper.addObserver(this._onDOMWindowCreated.bind(this), 'content-document-global-created'),
+      helper.addObserver(this._onDOMWindowCreated.bind(this), 'juggler-dom-window-reused'),
       helper.addObserver(subject => this._onDocShellCreated(subject.QueryInterface(Ci.nsIDocShell)), 'webnavigation-create'),
       helper.addObserver(subject => this._onDocShellDestroyed(subject.QueryInterface(Ci.nsIDocShell)), 'webnavigation-destroy'),
       helper.addProgressListener(webProgress, this, flags),
@@ -192,23 +197,23 @@ class FrameTree {
       return;
     }
 
+    if (!channel.isDocument) {
+      // Somehow, we can get worker requests here,
+      // while we are only interested in frame documents.
+      return;
+    }
+
     const isStart = flag & Ci.nsIWebProgressListener.STATE_START;
     const isTransferring = flag & Ci.nsIWebProgressListener.STATE_TRANSFERRING;
     const isStop = flag & Ci.nsIWebProgressListener.STATE_STOP;
-
-    let isDownload = false;
-    try {
-      isDownload = (channel.contentDisposition === Ci.nsIChannel.DISPOSITION_ATTACHMENT);
-    } catch(e) {
-      // The method is expected to throw if it's not an attachment.
-    }
+    const isDocument = flag & Ci.nsIWebProgressListener.STATE_IS_DOCUMENT;
 
     if (isStart) {
       // Starting a new navigation.
-      frame._pendingNavigationId = this._channelId(channel);
+      frame._pendingNavigationId = channelId(channel);
       frame._pendingNavigationURL = channel.URI.spec;
       this.emit(FrameTree.Events.NavigationStarted, frame);
-    } else if (isTransferring || (isStop && frame._pendingNavigationId && !status && !isDownload)) {
+    } else if (isTransferring || (isStop && frame._pendingNavigationId && !status)) {
       // Navigation is committed.
       for (const subframe of frame._children)
         this._detachFrame(subframe);
@@ -220,17 +225,20 @@ class FrameTree {
       this.emit(FrameTree.Events.NavigationCommitted, frame);
       if (frame === this._mainFrame)
         this.forcePageReady();
-    } else if (isStop && frame._pendingNavigationId && (status || isDownload)) {
+    } else if (isStop && frame._pendingNavigationId && status) {
       // Navigation is aborted.
       const navigationId = frame._pendingNavigationId;
       frame._pendingNavigationId = null;
       frame._pendingNavigationURL = null;
       // Always report download navigation as failure to match other browsers.
-      const errorText = isDownload ? 'Will download to file' : helper.getNetworkErrorStatusText(status);
+      const errorText = helper.getNetworkErrorStatusText(status);
       this.emit(FrameTree.Events.NavigationAborted, frame, navigationId, errorText);
-      if (frame === this._mainFrame && status !== Cr.NS_BINDING_ABORTED && !isDownload)
+      if (frame === this._mainFrame && status !== Cr.NS_BINDING_ABORTED)
         this.forcePageReady();
     }
+
+    if (isStop && isDocument)
+      this.emit(FrameTree.Events.Load, frame);
   }
 
   onFrameLocationChange(progress, request, location, flags) {
@@ -241,14 +249,6 @@ class FrameTree {
       frame._url = location.spec;
       this.emit(FrameTree.Events.SameDocumentNavigation, frame);
     }
-  }
-
-  _channelId(channel) {
-    if (channel instanceof Ci.nsIHttpChannel) {
-      const httpChannel = channel.QueryInterface(Ci.nsIHttpChannel);
-      return String(httpChannel.channelId);
-    }
-    return helper.generateId();
   }
 
   _onDocShellCreated(docShell) {
@@ -304,11 +304,17 @@ FrameTree.Events = {
   GlobalObjectCreated: 'globalobjectcreated',
   WorkerCreated: 'workercreated',
   WorkerDestroyed: 'workerdestroyed',
+  WebSocketCreated: 'websocketcreated',
+  WebSocketOpened: 'websocketopened',
+  WebSocketClosed: 'websocketclosed',
+  WebSocketFrameReceived: 'websocketframereceived',
+  WebSocketFrameSent: 'websocketframesent',
   NavigationStarted: 'navigationstarted',
   NavigationCommitted: 'navigationcommitted',
   NavigationAborted: 'navigationaborted',
   SameDocumentNavigation: 'samedocumentnavigation',
   PageReady: 'pageready',
+  Load: 'load',
 };
 
 class Frame {
@@ -317,7 +323,7 @@ class Frame {
     this._runtime = runtime;
     this._docShell = docShell;
     this._children = new Set();
-    this._frameId = helper.generateId();
+    this._frameId = helper.browsingContextToFrameId(this._docShell.browsingContext);
     this._parentFrame = null;
     this._url = '';
     if (docShell.domWindow && docShell.domWindow.location)
@@ -333,6 +339,90 @@ class Frame {
 
     this._textInputProcessor = null;
     this._executionContext = null;
+
+    this._webSocketListenerInnerWindowId = 0;
+    // WebSocketListener calls frameReceived event before webSocketOpened.
+    // To avoid this, serialize event reporting.
+    this._webSocketInfos = new Map();
+
+    const dispatchWebSocketFrameReceived = (webSocketSerialID, frame) => this._frameTree.emit(FrameTree.Events.WebSocketFrameReceived, {
+      frameId: this._frameId,
+      wsid: webSocketSerialID + '',
+      opcode: frame.opCode,
+      data: frame.opCode !== 1 ? btoa(frame.payload) : frame.payload,
+    });
+    this._webSocketListener = {
+      QueryInterface: ChromeUtils.generateQI([Ci.nsIWebSocketEventListener, ]),
+
+      webSocketCreated: (webSocketSerialID, uri, protocols) => {
+        this._frameTree.emit(FrameTree.Events.WebSocketCreated, {
+          frameId: this._frameId,
+          wsid: webSocketSerialID + '',
+          requestURL: uri,
+        });
+        this._webSocketInfos.set(webSocketSerialID, {
+          opened: false,
+          pendingIncomingFrames: [],
+        });
+      },
+
+      webSocketOpened: (webSocketSerialID, effectiveURI, protocols, extensions, httpChannelId) => {
+        this._frameTree.emit(FrameTree.Events.WebSocketOpened, {
+          frameId: this._frameId,
+          requestId: httpChannelId + '',
+          wsid: webSocketSerialID + '',
+          effectiveURL: effectiveURI,
+        });
+        const info = this._webSocketInfos.get(webSocketSerialID);
+        info.opened = true;
+        for (const frame of info.pendingIncomingFrames)
+          dispatchWebSocketFrameReceived(webSocketSerialID, frame);
+      },
+
+      webSocketMessageAvailable: (webSocketSerialID, data, messageType) => {
+        // We don't use this event.
+      },
+
+      webSocketClosed: (webSocketSerialID, wasClean, code, reason) => {
+        this._webSocketInfos.delete(webSocketSerialID);
+        let error = '';
+        if (!wasClean) {
+          const keys = Object.keys(Ci.nsIWebSocketChannel);
+          for (const key of keys) {
+            if (Ci.nsIWebSocketChannel[key] === code)
+              error = key;
+          }
+        }
+        this._frameTree.emit(FrameTree.Events.WebSocketClosed, {
+          frameId: this._frameId,
+          wsid: webSocketSerialID + '',
+          error,
+        });
+      },
+
+      frameReceived: (webSocketSerialID, frame) => {
+        // Report only text and binary frames.
+        if (frame.opCode !== 1 && frame.opCode !== 2)
+          return;
+        const info = this._webSocketInfos.get(webSocketSerialID);
+        if (info.opened)
+          dispatchWebSocketFrameReceived(webSocketSerialID, frame);
+        else
+          info.pendingIncomingFrames.push(frame);
+      },
+
+      frameSent: (webSocketSerialID, frame) => {
+        // Report only text and binary frames.
+        if (frame.opCode !== 1 && frame.opCode !== 2)
+          return;
+        this._frameTree.emit(FrameTree.Events.WebSocketFrameSent, {
+          frameId: this._frameId,
+          wsid: webSocketSerialID + '',
+          opcode: frame.opCode,
+          data: frame.opCode !== 1 ? btoa(frame.payload) : frame.payload,
+        });
+      },
+    };
   }
 
   dispose() {
@@ -355,6 +445,12 @@ class Frame {
   }
 
   _onGlobalObjectCleared() {
+    const webSocketService = this._frameTree._webSocketEventService;
+    if (this._webSocketListenerInnerWindowId)
+      webSocketService.removeListener(this._webSocketListenerInnerWindowId, this._webSocketListener);
+    this._webSocketListenerInnerWindowId = this.domWindow().windowGlobalChild.innerWindowId;
+    webSocketService.addListener(this._webSocketListenerInnerWindowId, this._webSocketListener);
+
     if (this._executionContext)
       this._runtime.destroyExecutionContext(this._executionContext);
     this._executionContext = this._runtime.createExecutionContext(this.domWindow(), this.domWindow(), {
@@ -437,10 +533,10 @@ class Worker {
     workerDebugger.initialize('chrome://juggler/content/content/WorkerMain.js');
 
     this._channel = new SimpleChannel(`content::worker[${this._workerId}]`);
-    this._channel.transport = {
+    this._channel.setTransport({
       sendMessage: obj => workerDebugger.postMessage(JSON.stringify(obj)),
       dispose: () => {},
-    };
+    });
     this._workerDebuggerListener = {
       QueryInterface: ChromeUtils.generateQI([Ci.nsIWorkerDebuggerListener]),
       onMessage: msg => void this._channel._onMessage(JSON.parse(msg)),
@@ -473,6 +569,15 @@ class Worker {
     this._workerDebugger.removeListener(this._workerDebuggerListener);
   }
 }
+
+function channelId(channel) {
+  if (channel instanceof Ci.nsIIdentChannel) {
+    const identChannel = channel.QueryInterface(Ci.nsIIdentChannel);
+    return String(identChannel.channelId);
+  }
+  return helper.generateId();
+}
+
 
 var EXPORTED_SYMBOLS = ['FrameTree'];
 this.FrameTree = FrameTree;

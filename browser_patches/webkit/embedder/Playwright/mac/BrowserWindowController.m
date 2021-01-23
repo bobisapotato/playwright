@@ -418,7 +418,13 @@ static BOOL areEssentiallyEqual(double a, double b)
 }
 
 - (void)webViewDidClose:(WKWebView *)webView {
+    [self webView:webView handleJavaScriptDialog:false value:nil];
     [self.window close];
+}
+
+- (void)_webView:(WKWebView *)webView getWindowFrameWithCompletionHandler:(void (^)(CGRect))completionHandler
+{
+    completionHandler([self.window frame]);
 }
 
 #define DefaultMinimumZoomFactor (.5)
@@ -471,7 +477,7 @@ static BOOL areEssentiallyEqual(double a, double b)
         title = url.lastPathComponent ?: url._web_userVisibleString;
     }
 
-    self.window.title = [NSString stringWithFormat:@"%@%@ [%d]%@", _isPrivateBrowsingWindow ? @"🙈 " : @"", title, _webView._webProcessIdentifier, @""];
+    self.window.title = title;
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
@@ -681,7 +687,7 @@ static NSSet *dataTypes()
 
     NSString *disposition = [[httpResponse allHeaderFields] objectForKey:@"Content-Disposition"];
     if (disposition && [disposition hasPrefix:@"attachment"]) {
-        decisionHandler(_WKNavigationResponsePolicyBecomeDownload);
+        decisionHandler(WKNavigationResponsePolicyDownload);
         return;
     }
     decisionHandler(WKNavigationResponsePolicyAllow);

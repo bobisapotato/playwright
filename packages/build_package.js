@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const rmSync = require('rimraf').sync;
 const ncp = require('ncp');
@@ -27,38 +28,49 @@ const cpAsync = util.promisify(ncp);
 const SCRIPT_NAME = path.basename(__filename);
 const ROOT_PATH = path.join(__dirname, '..');
 
-const PACKAGE_FILES = ['lib', 'types', 'NOTICE', 'LICENSE', '.npmignore'];
+const PLAYWRIGHT_CORE_FILES = ['bin/PrintDeps.exe', 'lib', 'types', 'NOTICE', 'LICENSE'];
+const FFMPEG_FILES = ['third_party/ffmpeg'];
 
 const PACKAGES = {
   'playwright': {
     description: 'A high-level API to automate web browsers',
-    whitelistedBrowsers: ['chromium', 'firefox', 'webkit'],
+    browsers: ['chromium', 'firefox', 'webkit'],
     // We copy README.md additionally for Playwright so that it looks nice on NPM.
-    files: [...PACKAGE_FILES, 'README.md'],
+    files: [...PLAYWRIGHT_CORE_FILES, ...FFMPEG_FILES, 'README.md'],
   },
   'playwright-core': {
     description: 'A high-level API to automate web browsers',
-    whitelistedBrowsers: [],
-    files: PACKAGE_FILES,
+    browsers: [],
+    files: PLAYWRIGHT_CORE_FILES,
   },
   'playwright-webkit': {
     description: 'A high-level API to automate WebKit',
-    whitelistedBrowsers: ['webkit'],
-    files: PACKAGE_FILES,
+    browsers: ['webkit'],
+    files: PLAYWRIGHT_CORE_FILES,
   },
   'playwright-firefox': {
     description: 'A high-level API to automate Firefox',
-    whitelistedBrowsers: ['firefox'],
-    files: PACKAGE_FILES,
+    browsers: ['firefox'],
+    files: PLAYWRIGHT_CORE_FILES,
   },
   'playwright-chromium': {
     description: 'A high-level API to automate Chromium',
-    whitelistedBrowsers: ['chromium'],
-    files: PACKAGE_FILES,
+    browsers: ['chromium'],
+    files: [...PLAYWRIGHT_CORE_FILES, ...FFMPEG_FILES],
+  },
+  'playwright-electron': {
+    version: '0.4.0', // Manually manage playwright-electron version.
+    description: 'A high-level API to automate Electron',
+    browsers: [],
+    files: [...PLAYWRIGHT_CORE_FILES, ...FFMPEG_FILES],
+  },
+  'playwright-android': {
+    version: '0.0.8', // Manually manage playwright-android version.
+    description: 'A high-level API to automate Chrome for Android',
+    browsers: [],
+    files: [...PLAYWRIGHT_CORE_FILES, ...FFMPEG_FILES, 'bin/android-driver.apk', 'bin/android-driver-target.apk'],
   },
 };
-
-const cleanupPaths = [];
 
 // 1. Parse CLI arguments
 const args = process.argv.slice(2);
@@ -75,10 +87,19 @@ if (args.some(arg => arg === '--help')) {
   process.exit(1);
 }
 
+const packageName = args[0];
+const outputPath = path.resolve(args[1]);
+const packagePath = path.join(__dirname, 'output', packageName);
+const package = PACKAGES[packageName];
+if (!package) {
+  console.log(`ERROR: unknown package ${packageName}`);
+  process.exit(1);
+}
+
 // 2. Setup cleanup if needed
 if (!args.some(arg => arg === '--no-cleanup')) {
-  process.on('exit', () => { 
-    cleanupPaths.forEach(cleanupPath => rmSync(cleanupPath, {}));
+  process.on('exit', () => {
+    rmSync(packagePath, {});
   });
   process.on('SIGINT', () => process.exit(2));
   process.on('SIGHUP', () => process.exit(3));
@@ -93,45 +114,66 @@ if (!args.some(arg => arg === '--no-cleanup')) {
   });
 }
 
-const packageName = args[0];
-const outputPath = path.resolve(args[1]);
-const packagePath = path.join(__dirname, packageName);
-const package = PACKAGES[packageName];
-if (!package) {
-  console.log(`ERROR: unknown package ${packageName}`);
-  process.exit(1);
-}
-
 (async () => {
   // 3. Copy package files.
+  rmSync(packagePath, {});
+  fs.mkdirSync(packagePath, { recursive: true });
+  await copyToPackage(path.join(__dirname, 'common') + path.sep, packagePath + path.sep);
+  if (fs.existsSync(path.join(__dirname, packageName))) {
+    // Copy package-specific files, these can overwrite common ones.
+    await copyToPackage(path.join(__dirname, packageName) + path.sep, packagePath + path.sep);
+  }
   for (const file of package.files)
-    await copyToPackage(file);
+    await copyToPackage(path.join(ROOT_PATH, file), path.join(packagePath, file));
+
+  await copyToPackage(path.join(ROOT_PATH, 'api.json'), path.join(packagePath, 'api.json'));
+  await copyToPackage(path.join(ROOT_PATH, 'src/protocol/protocol.yml'), path.join(packagePath, 'protocol.yml'));
 
   // 4. Generate package.json
-  const packageJSON = require(path.join(ROOT_PATH, 'package.json'));
+  const pwInternalJSON = require(path.join(ROOT_PATH, 'package.json'));
   await writeToPackage('package.json', JSON.stringify({
     name: packageName,
-    version: packageJSON.version,
+    version: package.version || pwInternalJSON.version,
     description: package.description,
-    repository: packageJSON.repository,
-    engines: packageJSON.engines,
-    homepage: packageJSON.homepage,
+    repository: pwInternalJSON.repository,
+    engines: pwInternalJSON.engines,
+    homepage: pwInternalJSON.homepage,
     main: 'index.js',
+    bin: {
+      playwright: './lib/cli/cli.js',
+    },
+    exports: {
+      // Root import: we have a wrapper ES Module to support the following syntax.
+      // const { chromium } = require('playwright');
+      // import { chromium } from 'playwright';
+      '.': {
+        import: './index.mjs',
+        require: './index.js',
+      },
+      // Anything else can be required/imported by providing a relative path.
+      './': './',
+    },
     scripts: {
       install: 'node install.js',
     },
-    author: packageJSON.author,
-    license: packageJSON.license,
-    dependencies: packageJSON.dependencies
+    author: pwInternalJSON.author,
+    license: pwInternalJSON.license,
+    dependencies: pwInternalJSON.dependencies
   }, null, 2));
 
   // 5. Generate browsers.json
   const browsersJSON = require(path.join(ROOT_PATH, 'browsers.json'));
-  browsersJSON.browsers = browsersJSON.browsers.filter(browser => package.whitelistedBrowsers.includes(browser.name));
+  for (const browser of browsersJSON.browsers)
+    browser.download = package.browsers.includes(browser.name);
   await writeToPackage('browsers.json', JSON.stringify(browsersJSON, null, 2));
 
-  // 6. Run npm pack
-  const {stdout, stderr, status} = spawnSync('npm', ['pack'], {cwd: packagePath, encoding: 'utf8'});
+  // 6. Bake commit SHA into the package
+  const commitSHA = spawnSync('git', ['rev-parse', 'HEAD'], {cwd: __dirname, encoding: 'utf8'});
+  await writeToPackage('commitinfo', commitSHA.stdout.trim());
+
+  // 7. Run npm pack
+  const shell = os.platform() === 'win32';
+  const {stdout, stderr, status} = spawnSync('npm', ['pack'], {cwd: packagePath, encoding: 'utf8', shell});
   if (status !== 0) {
     console.log(`ERROR: "npm pack" failed`);
     console.log(stderr);
@@ -146,16 +188,17 @@ if (!package) {
 
 async function writeToPackage(fileName, content) {
   const toPath = path.join(packagePath, fileName);
-  cleanupPaths.push(toPath);
   console.error(`- generating: //${path.relative(ROOT_PATH, toPath)}`);
   await writeFileAsync(toPath, content);
 }
 
-async function copyToPackage(fileOrDirectoryName) {
-  const fromPath = path.join(ROOT_PATH, fileOrDirectoryName);
-  const toPath = path.join(packagePath, fileOrDirectoryName);
-  cleanupPaths.push(toPath);
+async function copyToPackage(fromPath, toPath) {
   console.error(`- copying: //${path.relative(ROOT_PATH, fromPath)} -> //${path.relative(ROOT_PATH, toPath)}`);
+  try {
+    fs.mkdirSync(path.dirname(toPath), { recursive: true });
+  } catch (e) {
+    // the folder might exist already
+  }
   await cpAsync(fromPath, toPath);
 }
 

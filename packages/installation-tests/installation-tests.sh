@@ -21,11 +21,27 @@ PLAYWRIGHT_TGZ="$(node ${PACKAGE_BUILDER} playwright ./playwright.tgz)"
 PLAYWRIGHT_CHROMIUM_TGZ="$(node ${PACKAGE_BUILDER} playwright-chromium ./playwright-chromium.tgz)"
 PLAYWRIGHT_WEBKIT_TGZ="$(node ${PACKAGE_BUILDER} playwright-webkit ./playwright-webkit.tgz)"
 PLAYWRIGHT_FIREFOX_TGZ="$(node ${PACKAGE_BUILDER} playwright-firefox ./playwright-firefox.tgz)"
+PLAYWRIGHT_ELECTRON_TGZ="$(node ${PACKAGE_BUILDER} playwright-electron ./playwright-electron.tgz)"
+PLAYWRIGHT_ANDROID_TGZ="$(node ${PACKAGE_BUILDER} playwright-android ./playwright-android.tgz)"
 
-SANITY_JS="$(pwd -P)/../sanity.js"
+SCRIPTS_PATH="$(pwd -P)/.."
 TEST_ROOT="$(pwd -P)"
+NODE_VERSION="$(node --version)"
+
+function copy_test_scripts {
+  cp "${SCRIPTS_PATH}/sanity.js" .
+  cp "${SCRIPTS_PATH}/screencast.js" .
+  cp "${SCRIPTS_PATH}/esm.mjs" .
+  cp "${SCRIPTS_PATH}/esm-playwright.mjs" .
+  cp "${SCRIPTS_PATH}/esm-playwright-chromium.mjs" .
+  cp "${SCRIPTS_PATH}/esm-playwright-firefox.mjs" .
+  cp "${SCRIPTS_PATH}/esm-playwright-webkit.mjs" .
+  cp "${SCRIPTS_PATH}/sanity-electron.js" .
+  cp "${SCRIPTS_PATH}/electron-app.js" .
+}
 
 function run_tests {
+  test_screencast
   test_typescript_types
   test_skip_browser_download
   test_playwright_global_installation_subsequent_installs
@@ -34,6 +50,32 @@ function run_tests {
   test_playwright_webkit_should_work
   test_playwright_firefox_should_work
   test_playwright_global_installation
+  test_playwright_global_installation_cross_package
+  test_playwright_electron_should_work
+  test_electron_types
+  test_android_types
+  test_playwright_cli_screenshot_should_work
+  test_playwright_cli_install_should_work
+  test_playwright_cli_codegen_should_work
+}
+
+function test_screencast {
+  initialize_test "${FUNCNAME[0]}"
+  copy_test_scripts
+
+  local BROWSERS="$(pwd -P)/browsers"
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" npm install ${PLAYWRIGHT_TGZ}
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" npm install ${PLAYWRIGHT_FIREFOX_TGZ}
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" npm install ${PLAYWRIGHT_WEBKIT_TGZ}
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" npm install ${PLAYWRIGHT_CHROMIUM_TGZ}
+
+  echo "Running screencast.js"
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" node screencast.js playwright
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" node screencast.js playwright-chromium
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" node screencast.js playwright-webkit
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" node screencast.js playwright-firefox
+
+  echo "${FUNCNAME[0]} success"
 }
 
 function test_typescript_types {
@@ -56,6 +98,8 @@ function test_typescript_types {
     echo "Checking types of ${PKG_NAME}"
     echo "import { Page } from '${PKG_NAME}';" > "${PKG_NAME}.ts" && tsc "${PKG_NAME}.ts"
   done;
+
+  echo "${FUNCNAME[0]} success"
 }
 
 function test_playwright_global_installation {
@@ -67,14 +111,39 @@ function test_playwright_global_installation {
     echo "Directory for shared browsers was not created!"
     exit 1
   fi
-  cp ${SANITY_JS} .
-  if node sanity.js playwright chromium 2>/dev/null; then
-    echo "Should not be able to launch chromium without PLAYWRIGHT_BROWSERS_PATH variable!"
-    exit 1
-  fi
-  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" node sanity.js playwright chromium
+  copy_test_scripts
+
+  echo "Running sanity.js"
+  node sanity.js playwright none
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" node sanity.js playwright
+
+  echo "${FUNCNAME[0]} success"
 }
 
+function test_playwright_global_installation_cross_package {
+  initialize_test "${FUNCNAME[0]}"
+
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install ${PLAYWRIGHT_FIREFOX_TGZ}
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install ${PLAYWRIGHT_WEBKIT_TGZ}
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install ${PLAYWRIGHT_CHROMIUM_TGZ}
+
+  local BROWSERS="$(pwd -P)/browsers"
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" npm install ${PLAYWRIGHT_TGZ}
+  if [[ ! -d "${BROWSERS}" ]]; then
+    echo "Directory for shared browsers was not created!"
+    exit 1
+  fi
+
+  copy_test_scripts
+
+  echo "Running sanity.js"
+  # Every package should be able to launch.
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" node sanity.js playwright-chromium all
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" node sanity.js playwright-firefox all
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" node sanity.js playwright-webkit all
+
+  echo "${FUNCNAME[0]} success"
+}
 
 # @see https://github.com/microsoft/playwright/issues/1651
 function test_playwright_global_installation_subsequent_installs {
@@ -90,6 +159,8 @@ function test_playwright_global_installation_subsequent_installs {
   # Note: the flag `--unahdnled-rejections=strict` will force node to terminate in case
   # of UnhandledPromiseRejection.
   PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" node --unhandled-rejections=strict node_modules/playwright/install.js
+
+  echo "${FUNCNAME[0]} success"
 }
 
 function test_skip_browser_download {
@@ -105,40 +176,263 @@ function test_skip_browser_download {
     echo "local browsers folder should be empty"
     exit 1
   fi
+
+  echo "${FUNCNAME[0]} success"
 }
 
 function test_playwright_should_work {
   initialize_test "${FUNCNAME[0]}"
 
-  npm install ${PLAYWRIGHT_TGZ}
-  cp ${SANITY_JS} . && node sanity.js playwright chromium firefox webkit
+  OUTPUT=$(npm install ${PLAYWRIGHT_TGZ})
+  if [[ "${OUTPUT}" != *"chromium"* ]]; then
+    echo "ERROR: should download chromium"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" != *"firefox"* ]]; then
+    echo "ERROR: should download firefox"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" != *"webkit"* ]]; then
+    echo "ERROR: should download webkit"
+    exit 1
+  fi
+  copy_test_scripts
+
+  echo "Running sanity.js"
+  node sanity.js playwright
+  if [[ "${NODE_VERSION}" == *"v14."* ]]; then
+    echo "Running esm.js"
+    node esm-playwright.mjs
+  fi
+
+  echo "${FUNCNAME[0]} success"
 }
 
 function test_playwright_chromium_should_work {
   initialize_test "${FUNCNAME[0]}"
 
-  npm install ${PLAYWRIGHT_CHROMIUM_TGZ}
-  cp ${SANITY_JS} . && node sanity.js playwright-chromium chromium
+  OUTPUT=$(npm install ${PLAYWRIGHT_CHROMIUM_TGZ})
+  if [[ "${OUTPUT}" != *"chromium"* ]]; then
+    echo "ERROR: should download chromium"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" == *"firefox"* ]]; then
+    echo "ERROR: should not download firefox"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" == *"webkit"* ]]; then
+    echo "ERROR: should not download webkit"
+    exit 1
+  fi
+  copy_test_scripts
+
+  echo "Running sanity.js"
+  node sanity.js playwright-chromium
+  if [[ "${NODE_VERSION}" == *"v14."* ]]; then
+    echo "Running esm.js"
+    node esm-playwright-chromium.mjs
+  fi
+
+  echo "${FUNCNAME[0]} success"
 }
 
 function test_playwright_webkit_should_work {
   initialize_test "${FUNCNAME[0]}"
 
-  npm install ${PLAYWRIGHT_WEBKIT_TGZ}
-  cp ${SANITY_JS} . && node sanity.js playwright-webkit webkit
+  OUTPUT=$(npm install ${PLAYWRIGHT_WEBKIT_TGZ})
+  if [[ "${OUTPUT}" == *"chromium"* ]]; then
+    echo "ERROR: should not download chromium"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" == *"firefox"* ]]; then
+    echo "ERROR: should not download firefox"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" != *"webkit"* ]]; then
+    echo "ERROR: should download webkit"
+    exit 1
+  fi
+  copy_test_scripts
+
+  echo "Running sanity.js"
+  node sanity.js playwright-webkit
+  if [[ "${NODE_VERSION}" == *"v14."* ]]; then
+    echo "Running esm.js"
+    node esm-playwright-webkit.mjs
+  fi
+
+  echo "${FUNCNAME[0]} success"
 }
 
 function test_playwright_firefox_should_work {
   initialize_test "${FUNCNAME[0]}"
 
-  npm install ${PLAYWRIGHT_FIREFOX_TGZ}
-  cp ${SANITY_JS} . && node sanity.js playwright-firefox firefox
+  OUTPUT=$(npm install ${PLAYWRIGHT_FIREFOX_TGZ})
+  if [[ "${OUTPUT}" == *"chromium"* ]]; then
+    echo "ERROR: should not download chromium"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" != *"firefox"* ]]; then
+    echo "ERROR: should download firefox"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" == *"webkit"* ]]; then
+    echo "ERROR: should not download webkit"
+    exit 1
+  fi
+  copy_test_scripts
+
+  echo "Running sanity.js"
+  node sanity.js playwright-firefox
+  if [[ "${NODE_VERSION}" == *"v14."* ]]; then
+    echo "Running esm.js"
+    node esm-playwright-firefox.mjs
+  fi
+
+  echo "${FUNCNAME[0]} success"
+}
+
+function test_playwright_electron_should_work {
+  initialize_test "${FUNCNAME[0]}"
+
+  npm install ${PLAYWRIGHT_ELECTRON_TGZ}
+  npm install electron@9.0
+  copy_test_scripts
+
+  echo "Running sanity-electron.js"
+  xvfb-run --auto-servernum -- bash -c "node sanity-electron.js"
+
+  echo "${FUNCNAME[0]} success"
+}
+
+function test_electron_types {
+  initialize_test "${FUNCNAME[0]}"
+  npm install ${PLAYWRIGHT_ELECTRON_TGZ}
+  npm install electron@9.0
+  npm install -D typescript@3.8
+  npm install -D @types/node@10.17
+  echo "import { Page, electron, ElectronApplication, ElectronLauncher } from 'playwright-electron';" > "test.ts"
+
+  echo "Running tsc"
+  npx tsc "test.ts"
+
+  echo "${FUNCNAME[0]} success"
+}
+
+function test_android_types {
+  initialize_test "${FUNCNAME[0]}"
+
+  npm install ${PLAYWRIGHT_ANDROID_TGZ}
+  npm install -D typescript@3.8
+  npm install -D @types/node@10.17
+  echo "import { AndroidDevice, android, AndroidWebView, Page } from 'playwright-android';" > "test.ts"
+
+  echo "Running tsc"
+  npx tsc "test.ts"
+
+  echo "${FUNCNAME[0]} success"
+}
+
+function test_playwright_cli_screenshot_should_work {
+  initialize_test "${FUNCNAME[0]}"
+
+  npm install ${PLAYWRIGHT_TGZ}
+
+  echo "Running playwright screenshot"
+
+  node_modules/.bin/playwright screenshot about:blank one.png
+  if [[ ! -f one.png ]]; then
+    echo 'node_modules/.bin/playwright does not work'
+    exit 1
+  fi
+
+  npx playwright screenshot about:blank two.png
+  if [[ ! -f two.png ]]; then
+    echo 'npx playwright does not work'
+    exit 1
+  fi
+
+  echo "${FUNCNAME[0]} success"
+}
+
+function test_playwright_cli_install_should_work {
+  initialize_test "${FUNCNAME[0]}"
+
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install ${PLAYWRIGHT_TGZ}
+
+  local BROWSERS="$(pwd -P)/browsers"
+
+  echo "Running playwright install chromium"
+  OUTPUT=$(PLAYWRIGHT_BROWSERS_PATH=${BROWSERS} npx playwright install chromium)
+  if [[ "${OUTPUT}" != *"chromium"* ]]; then
+    echo "ERROR: should download chromium"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" == *"webkit"* ]]; then
+    echo "ERROR: should not download webkit"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" == *"firefox"* ]]; then
+    echo "ERROR: should not download firefox"
+    exit 1
+  fi
+
+  echo "Running playwright install"
+  OUTPUT=$(PLAYWRIGHT_BROWSERS_PATH=${BROWSERS} npx playwright install)
+  if [[ "${OUTPUT}" == *"chromium"* ]]; then
+    echo "ERROR: should not download chromium"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" != *"webkit"* ]]; then
+    echo "ERROR: should download webkit"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" != *"firefox"* ]]; then
+    echo "ERROR: should download firefox"
+    exit 1
+  fi
+
+  copy_test_scripts
+  echo "Running sanity.js"
+  node sanity.js playwright none
+  PLAYWRIGHT_BROWSERS_PATH="${BROWSERS}" node sanity.js playwright
+
+  echo "${FUNCNAME[0]} success"
+}
+
+function test_playwright_cli_codegen_should_work {
+  initialize_test "${FUNCNAME[0]}"
+
+  npm install ${PLAYWRIGHT_TGZ}
+
+  echo "Running playwright codegen"
+  OUTPUT=$(PWCLI_EXIT_FOR_TEST=1 xvfb-run --auto-servernum -- bash -c "npx playwright codegen")
+  if [[ "${OUTPUT}" != *"chromium.launch"* ]]; then
+    echo "ERROR: missing chromium.launch in the output"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" != *"browser.close"* ]]; then
+    echo "ERROR: missing browser.close in the output"
+    exit 1
+  fi
+
+  echo "Running playwright codegen --target=python"
+  OUTPUT=$(PWCLI_EXIT_FOR_TEST=1 xvfb-run --auto-servernum -- bash -c "npx playwright codegen --target=python")
+  if [[ "${OUTPUT}" != *"chromium.launch"* ]]; then
+    echo "ERROR: missing chromium.launch in the output"
+    exit 1
+  fi
+  if [[ "${OUTPUT}" != *"browser.close"* ]]; then
+    echo "ERROR: missing browser.close in the output"
+    exit 1
+  fi
+
+  echo "${FUNCNAME[0]} success"
 }
 
 function initialize_test {
   cd ${TEST_ROOT}
   local TEST_NAME="./$1"
-  mkdir ${TEST_NAME} && cd ${TEST_NAME} && npm init -y
   echo "====================================================================================="
   echo "====================================================================================="
   echo
@@ -146,6 +440,7 @@ function initialize_test {
   echo
   echo "====================================================================================="
   echo "====================================================================================="
+  mkdir ${TEST_NAME} && cd ${TEST_NAME} && npm init -y
 }
 
 # Run all tests

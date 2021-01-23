@@ -21,28 +21,97 @@ if [[ $# == 0 ]]; then
   exit 1
 fi
 
+CURRENT_ARCH="$(uname -m)"
 CURRENT_HOST_OS="$(uname)"
 CURRENT_HOST_OS_VERSION=""
 if [[ "$CURRENT_HOST_OS" == "Darwin" ]]; then
   CURRENT_HOST_OS_VERSION=$(sw_vers -productVersion | grep -o '^\d\+.\d\+')
+elif [[ "$CURRENT_HOST_OS" == "Linux" ]]; then
+  CURRENT_HOST_OS="$(bash -c 'source /etc/os-release && echo $NAME')"
+  CURRENT_HOST_OS_VERSION="$(bash -c 'source /etc/os-release && echo $VERSION_ID')"
 fi
 
 BROWSER_NAME=""
 EXTRA_BUILD_ARGS=""
-EXTRA_ARCHIVE_ARGS=""
 BUILD_FLAVOR="$1"
 BUILD_BLOB_NAME=""
 EXPECTED_HOST_OS=""
 EXPECTED_HOST_OS_VERSION=""
-if [[ "$BUILD_FLAVOR" == "firefox-linux" ]]; then
+EXPECTED_ARCH="x86_64"
+if [[ "$BUILD_FLAVOR" == "winldd-win64" ]]; then
+  BROWSER_NAME="winldd"
+  EXPECTED_HOST_OS="MINGW"
+  BUILD_BLOB_NAME="winldd-win64.zip"
+elif [[ "$BUILD_FLAVOR" == "ffmpeg-mac" ]]; then
+  BROWSER_NAME="ffmpeg"
+  EXTRA_BUILD_ARGS="--mac"
+  EXPECTED_HOST_OS="Darwin"
+  EXPECTED_HOST_OS_VERSION="10.14"
+  BUILD_BLOB_NAME="ffmpeg-mac.zip"
+elif [[ "$BUILD_FLAVOR" == "ffmpeg-linux" ]]; then
+  BROWSER_NAME="ffmpeg"
+  EXTRA_BUILD_ARGS="--linux"
+  EXPECTED_HOST_OS="Ubuntu"
+  EXPECTED_HOST_OS_VERSION="20.04"
+  BUILD_BLOB_NAME="ffmpeg-linux.zip"
+elif [[ "$BUILD_FLAVOR" == "ffmpeg-cross-compile-win32" ]]; then
+  BROWSER_NAME="ffmpeg"
+  EXTRA_BUILD_ARGS="--cross-compile-win32"
+  EXPECTED_HOST_OS="Ubuntu"
+  EXPECTED_HOST_OS_VERSION="20.04"
+  BUILD_BLOB_NAME="ffmpeg-win32.zip"
+elif [[ "$BUILD_FLAVOR" == "ffmpeg-cross-compile-win64" ]]; then
+  BROWSER_NAME="ffmpeg"
+  EXTRA_BUILD_ARGS="--cross-compile-win64"
+  EXPECTED_HOST_OS="Ubuntu"
+  EXPECTED_HOST_OS_VERSION="20.04"
+  BUILD_BLOB_NAME="ffmpeg-win64.zip"
+elif [[ "$BUILD_FLAVOR" == "chromium-mac-arm64" ]]; then
+  BROWSER_NAME="chromium"
+  EXTRA_BUILD_ARGS="--compile-mac-arm64"
+  EXPECTED_HOST_OS="Darwin"
+  EXPECTED_HOST_OS_VERSION="10.15"
+  BUILD_BLOB_NAME="chromium-mac-arm64.zip"
+elif [[ "$BUILD_FLAVOR" == "chromium-linux-mirror-to-cdn" ]]; then
+  BROWSER_NAME="chromium"
+  EXTRA_BUILD_ARGS="--mirror-linux"
+  EXPECTED_HOST_OS="Ubuntu"
+  EXPECTED_HOST_OS_VERSION="18.04"
+  BUILD_BLOB_NAME="chromium-linux.zip"
+elif [[ "$BUILD_FLAVOR" == "chromium-mac-mirror-to-cdn" ]]; then
+  BROWSER_NAME="chromium"
+  EXTRA_BUILD_ARGS="--mirror-mac"
+  EXPECTED_HOST_OS="Ubuntu"
+  EXPECTED_HOST_OS_VERSION="18.04"
+  BUILD_BLOB_NAME="chromium-mac.zip"
+elif [[ "$BUILD_FLAVOR" == "chromium-win32-mirror-to-cdn" ]]; then
+  BROWSER_NAME="chromium"
+  EXTRA_BUILD_ARGS="--mirror-win32"
+  EXPECTED_HOST_OS="Ubuntu"
+  EXPECTED_HOST_OS_VERSION="18.04"
+  BUILD_BLOB_NAME="chromium-win32.zip"
+elif [[ "$BUILD_FLAVOR" == "chromium-win64-mirror-to-cdn" ]]; then
+  BROWSER_NAME="chromium"
+  EXTRA_BUILD_ARGS="--mirror-win64"
+  EXPECTED_HOST_OS="Ubuntu"
+  EXPECTED_HOST_OS_VERSION="18.04"
+  BUILD_BLOB_NAME="chromium-win64.zip"
+elif [[ "$BUILD_FLAVOR" == "firefox-ubuntu-18.04" ]]; then
   BROWSER_NAME="firefox"
-  EXPECTED_HOST_OS="Linux"
-  BUILD_BLOB_NAME="firefox-linux.zip"
-elif [[ "$BUILD_FLAVOR" == "firefox-mac" ]]; then
+  EXPECTED_HOST_OS="Ubuntu"
+  EXPECTED_HOST_OS_VERSION="18.04"
+  BUILD_BLOB_NAME="firefox-ubuntu-18.04.zip"
+elif [[ "$BUILD_FLAVOR" == "firefox-mac-10.14" ]]; then
   BROWSER_NAME="firefox"
   EXPECTED_HOST_OS="Darwin"
   EXPECTED_HOST_OS_VERSION="10.14"
-  BUILD_BLOB_NAME="firefox-mac.zip"
+  BUILD_BLOB_NAME="firefox-mac-10.14.zip"
+elif [[ "$BUILD_FLAVOR" == "firefox-mac-11.0-arm64" ]]; then
+  BROWSER_NAME="firefox"
+  EXPECTED_HOST_OS="Darwin"
+  EXPECTED_HOST_OS_VERSION="11.0"
+  EXPECTED_ARCH="arm64"
+  BUILD_BLOB_NAME="firefox-mac-11.0-arm64.zip"
 elif [[ "$BUILD_FLAVOR" == "firefox-win32" ]]; then
   BROWSER_NAME="firefox"
   EXPECTED_HOST_OS="MINGW"
@@ -52,38 +121,52 @@ elif [[ "$BUILD_FLAVOR" == "firefox-win64" ]]; then
   EXTRA_BUILD_ARGS="--win64"
   EXPECTED_HOST_OS="MINGW"
   BUILD_BLOB_NAME="firefox-win64.zip"
-elif [[ "$BUILD_FLAVOR" == "webkit-gtk" ]]; then
+elif [[ "$BUILD_FLAVOR" == "webkit-ubuntu-18.04" ]]; then
   BROWSER_NAME="webkit"
-  EXTRA_BUILD_ARGS="--gtk"
-  EXTRA_ARCHIVE_ARGS="--gtk"
-  EXPECTED_HOST_OS="Linux"
-  BUILD_BLOB_NAME="minibrowser-gtk.zip"
-elif [[ "$BUILD_FLAVOR" == "webkit-wpe" ]]; then
+  EXTRA_BUILD_ARGS="--full"
+  EXPECTED_HOST_OS="Ubuntu"
+  EXPECTED_HOST_OS_VERSION="18.04"
+  BUILD_BLOB_NAME="webkit-ubuntu-18.04.zip"
+elif [[ "$BUILD_FLAVOR" == "webkit-ubuntu-20.04" ]]; then
   BROWSER_NAME="webkit"
-  EXTRA_BUILD_ARGS="--wpe"
-  EXTRA_ARCHIVE_ARGS="--wpe"
-  EXPECTED_HOST_OS="Linux"
-  BUILD_BLOB_NAME="minibrowser-wpe.zip"
-elif [[ "$BUILD_FLAVOR" == "webkit-gtk-wpe" ]]; then
-  BROWSER_NAME="webkit"
-  EXPECTED_HOST_OS="Linux"
-  BUILD_BLOB_NAME="minibrowser-gtk-wpe.zip"
+  EXTRA_BUILD_ARGS="--full"
+  EXPECTED_HOST_OS="Ubuntu"
+  EXPECTED_HOST_OS_VERSION="20.04"
+  BUILD_BLOB_NAME="webkit-ubuntu-20.04.zip"
 elif [[ "$BUILD_FLAVOR" == "webkit-win64" ]]; then
   BROWSER_NAME="webkit"
   EXPECTED_HOST_OS="MINGW"
-  BUILD_BLOB_NAME="minibrowser-win64.zip"
+  BUILD_BLOB_NAME="webkit-win64.zip"
 elif [[ "$BUILD_FLAVOR" == "webkit-mac-10.14" ]]; then
   BROWSER_NAME="webkit"
   EXPECTED_HOST_OS="Darwin"
   EXPECTED_HOST_OS_VERSION="10.14"
-  BUILD_BLOB_NAME="minibrowser-mac-10.14.zip"
+  BUILD_BLOB_NAME="webkit-mac-10.14.zip"
 elif [[ "$BUILD_FLAVOR" == "webkit-mac-10.15" ]]; then
   BROWSER_NAME="webkit"
   EXPECTED_HOST_OS="Darwin"
   EXPECTED_HOST_OS_VERSION="10.15"
-  BUILD_BLOB_NAME="minibrowser-mac-10.15.zip"
+  BUILD_BLOB_NAME="webkit-mac-10.15.zip"
+elif [[ "$BUILD_FLAVOR" == "webkit-mac-11.0" ]]; then
+  BROWSER_NAME="webkit"
+  EXPECTED_HOST_OS="Darwin"
+  EXPECTED_HOST_OS_VERSION="11.0"
+  BUILD_BLOB_NAME="webkit-mac-11.0.zip"
+elif [[ "$BUILD_FLAVOR" == "webkit-mac-11.0-arm64" ]]; then
+  BROWSER_NAME="webkit"
+  EXPECTED_HOST_OS="Darwin"
+  EXPECTED_HOST_OS_VERSION="11.0"
+  EXPECTED_ARCH="arm64"
+  BUILD_BLOB_NAME="webkit-mac-11.0-arm64.zip"
 else
   echo ERROR: unknown build flavor - "$BUILD_FLAVOR"
+  exit 1
+fi
+
+if [[ "$CURRENT_ARCH" != "$EXPECTED_ARCH" ]]; then
+  echo "ERROR: cannot build $BUILD_FLAVOR"
+  echo "  -- expected arch: $EXPECTED_ARCH"
+  echo "  --  current arch: $CURRENT_ARCH"
   exit 1
 fi
 
@@ -115,7 +198,7 @@ if [[ -f $ZIP_PATH ]]; then
 fi
 trap "rm -rf ${ZIP_PATH}; rm -rf ${LOG_PATH}; cd $(pwd -P);" INT TERM EXIT
 cd "$(dirname "$0")"
-BUILD_NUMBER=$(cat ./$BROWSER_NAME/BUILD_NUMBER)
+BUILD_NUMBER=$(head -1 ./$BROWSER_NAME/BUILD_NUMBER)
 BUILD_BLOB_PATH="${BROWSER_NAME}/${BUILD_NUMBER}/${BUILD_BLOB_NAME}"
 LOG_BLOB_NAME="${BUILD_BLOB_NAME%.zip}.log.gz"
 LOG_BLOB_PATH="${BROWSER_NAME}/${BUILD_NUMBER}/${LOG_BLOB_NAME}"
@@ -135,20 +218,6 @@ else
 fi
 
 function generate_and_upload_browser_build {
-  # webkit-gtk-wpe is a special build doesn't need to be built.
-  if [[ "$BUILD_FLAVOR" == "webkit-gtk-wpe" ]]; then
-    echo "-- combining binaries together"
-    if ! ./webkit/download_gtk_and_wpe_and_zip_together.sh $ZIP_PATH; then
-      return 10
-    fi
-    echo "-- uploading"
-    if ! ./upload.sh $BUILD_BLOB_PATH $ZIP_PATH; then
-      return 11
-    fi
-    return 0
-  fi
-
-  # Other browser flavors follow typical build flow.
   echo "-- preparing checkout"
   if ! ./prepare_checkout.sh $BROWSER_NAME; then
     return 20
@@ -165,7 +234,7 @@ function generate_and_upload_browser_build {
   fi
 
   echo "-- archiving to $ZIP_PATH"
-  if ! ./$BROWSER_NAME/archive.sh $ZIP_PATH "$EXTRA_ARCHIVE_ARGS"; then
+  if ! ./$BROWSER_NAME/archive.sh $ZIP_PATH; then
     return 23
   fi
 

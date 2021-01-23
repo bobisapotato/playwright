@@ -9,11 +9,8 @@ const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const {Preferences} = ChromeUtils.import("resource://gre/modules/Preferences.jsm");
 const {ContextualIdentityService} = ChromeUtils.import("resource://gre/modules/ContextualIdentityService.jsm");
 const {NetUtil} = ChromeUtils.import('resource://gre/modules/NetUtil.jsm');
-const {PageHandler} = ChromeUtils.import("chrome://juggler/content/protocol/PageHandler.js");
-const {NetworkHandler} = ChromeUtils.import("chrome://juggler/content/protocol/NetworkHandler.js");
-const {RuntimeHandler} = ChromeUtils.import("chrome://juggler/content/protocol/RuntimeHandler.js");
-const {AccessibilityHandler} = ChromeUtils.import("chrome://juggler/content/protocol/AccessibilityHandler.js");
 const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {OS} = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 const helper = new Helper();
 
@@ -29,29 +26,16 @@ class DownloadInterceptor {
   constructor(registry) {
     this._registry = registry
     this._handlerToUuid = new Map();
-    helper.addObserver(this._onRequest.bind(this), 'http-on-modify-request');
-  }
-
-  _onRequest(httpChannel, topic) {
-    let loadContext = helper.getLoadContext(httpChannel);
-    if (!loadContext)
-      return;
-    if (!loadContext.topFrameElement)
-      return;
-    const target = this._registry.targetForBrowser(loadContext.topFrameElement);
-    if (!target)
-      return;
-    target._channelIds.add(httpChannel.channelId);
   }
 
   //
   // nsIDownloadInterceptor implementation.
   //
   interceptDownloadRequest(externalAppHandler, request, browsingContext, outFile) {
-    let pageTarget = this._registry._browserBrowsingContextToTarget.get(browsingContext);
-    // New page downloads won't have browsing contex.
-    if (!pageTarget)
-      pageTarget = this._registry._targetForChannel(request);
+    if (!(request instanceof Ci.nsIChannel))
+      return false;
+    const channel = request.QueryInterface(Ci.nsIChannel);
+    let pageTarget = this._registry._browserBrowsingContextToTarget.get(channel.loadInfo.browsingContext);
     if (!pageTarget)
       return false;
 
@@ -113,6 +97,8 @@ class TargetRegistry {
     this._browserToTarget = new Map();
     this._browserBrowsingContextToTarget = new Map();
 
+    this._browserProxy = null;
+
     // Cleanup containers from previous runs (if any)
     for (const identity of ContextualIdentityService.getPublicIdentities()) {
       if (identity.name && identity.name.startsWith(IDENTITY_NAME)) {
@@ -131,113 +117,130 @@ class TargetRegistry {
         const target = this._browserToTarget.get(browser);
         if (!target)
           return;
-        target.emit('crashed');
+        target.emit(PageTarget.Events.Crashed);
         target.dispose();
-        this.emit(TargetRegistry.Events.TargetDestroyed, target);
       }
     }, 'oop-frameloader-crashed');
 
     Services.mm.addMessageListener('juggler:content-ready', {
       receiveMessage: message => {
         const linkedBrowser = message.target;
-        if (this._browserToTarget.has(linkedBrowser))
-          throw new Error(`Internal error: two targets per linkedBrowser`);
-
-        let tab;
-        let gBrowser;
-        const windowsIt = Services.wm.getEnumerator('navigator:browser');
-        while (windowsIt.hasMoreElements()) {
-          const window = windowsIt.getNext();
-          // gBrowser is always created before tabs. If gBrowser is not
-          // initialized yet the browser belongs to another window.
-          if (!window.gBrowser)
-            continue;
-          tab = window.gBrowser.getTabForBrowser(linkedBrowser);
-          if (tab) {
-            gBrowser = window.gBrowser;
-            break;
-          }
-        }
-        if (!tab)
+        const target = this._browserToTarget.get(linkedBrowser);
+        if (!target)
           return;
 
-        const { userContextId } = message.data;
-        const openerContext = linkedBrowser.browsingContext.opener;
-        let openerTarget;
-        if (openerContext) {
-          // Popups usually have opener context.
-          openerTarget = this._browserBrowsingContextToTarget.get(openerContext);
-        } else if (tab.openerTab) {
-          // Noopener popups from the same window have opener tab instead.
-          openerTarget = this._browserToTarget.get(tab.openerTab.linkedBrowser);
-        }
-        const browserContext = this._userContextIdToBrowserContext.get(userContextId);
-        const target = new PageTarget(this, gBrowser, tab, linkedBrowser, browserContext, openerTarget);
-
-        const sessions = [];
-        const readyData = { sessions, target };
-        this.emit(TargetRegistry.Events.TargetCreated, readyData);
-        sessions.forEach(session => target._initSession(session));
         return {
-          scriptsToEvaluateOnNewDocument: browserContext ? browserContext.scriptsToEvaluateOnNewDocument : [],
-          bindings: browserContext ? browserContext.bindings : [],
-          settings: browserContext ? browserContext.settings : {},
-          sessionIds: sessions.map(session => session.sessionId()),
+          scriptsToEvaluateOnNewDocument: target.browserContext().scriptsToEvaluateOnNewDocument,
+          bindings: target.browserContext().bindings,
+          settings: target.browserContext().settings,
         };
       },
     });
 
-    const onTabOpenListener = event => {
+    const onTabOpenListener = (appWindow, window, event) => {
       const tab = event.target;
       const userContextId = tab.userContextId;
       const browserContext = this._userContextIdToBrowserContext.get(userContextId);
-      if (browserContext && browserContext.defaultViewportSize)
-        setViewportSizeForBrowser(browserContext.defaultViewportSize, tab.linkedBrowser);
+      const hasExplicitSize = appWindow && (appWindow.chromeFlags & Ci.nsIWebBrowserChrome.JUGGLER_WINDOW_EXPLICIT_SIZE) !== 0;
+      const openerContext = tab.linkedBrowser.browsingContext.opener;
+      let openerTarget;
+      if (openerContext) {
+        // Popups usually have opener context.
+        openerTarget = this._browserBrowsingContextToTarget.get(openerContext);
+      } else if (tab.openerTab) {
+        // Noopener popups from the same window have opener tab instead.
+        openerTarget = this._browserToTarget.get(tab.openerTab.linkedBrowser);
+      }
+      if (!browserContext)
+        throw new Error(`Internal error: cannot find context for userContextId=${userContextId}`);
+      const target = new PageTarget(this, window, tab, browserContext, openerTarget);
+      target.updateUserAgent();
+      target.updateTouchOverride();
+      if (!hasExplicitSize)
+        target.updateViewportSize();
+      if (browserContext.screencastOptions)
+        target._startVideoRecording(browserContext.screencastOptions);
     };
 
     const onTabCloseListener = event => {
       const tab = event.target;
       const linkedBrowser = tab.linkedBrowser;
       const target = this._browserToTarget.get(linkedBrowser);
-      if (target) {
-        target.dispose();
-        this.emit(TargetRegistry.Events.TargetDestroyed, target);
-      }
+      if (target)
+          target.dispose();
     };
 
-    Services.wm.addListener({
-      onOpenWindow: async window => {
-        const domWindow = window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowInternal || Ci.nsIDOMWindow);
-        if (!(domWindow instanceof Ci.nsIDOMChromeWindow))
-          return;
-        if (domWindow.document.readyState !== 'uninitialized')
-          throw new Error('DOMWindow should not be loaded yet');
-        await new Promise(fulfill => {
-          domWindow.addEventListener('DOMContentLoaded', function listener() {
-            domWindow.removeEventListener('DOMContentLoaded', listener);
-            fulfill();
-          });
-        });
-        if (!domWindow.gBrowser)
-          return;
-        domWindow.gBrowser.tabContainer.addEventListener('TabOpen', onTabOpenListener);
-        domWindow.gBrowser.tabContainer.addEventListener('TabClose', onTabCloseListener);
-      },
-      onCloseWindow: window => {
-        const domWindow = window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowInternal || Ci.nsIDOMWindow);
-        if (!(domWindow instanceof Ci.nsIDOMChromeWindow))
-          return;
-        if (!domWindow.gBrowser)
-          return;
-        domWindow.gBrowser.tabContainer.removeEventListener('TabOpen', onTabOpenListener);
-        domWindow.gBrowser.tabContainer.removeEventListener('TabClose', onTabCloseListener);
-        for (const tab of domWindow.gBrowser.tabs)
-          onTabCloseListener({ target: tab });
-      },
-    });
+    const domWindowTabListeners = new Map();
+
+    const onOpenWindow = async (appWindow) => {
+
+      let domWindow;
+      if (appWindow instanceof Ci.nsIAppWindow) {
+        domWindow = appWindow.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowInternal || Ci.nsIDOMWindow);
+      } else {
+        domWindow = appWindow;
+        appWindow = null;
+      }
+      if (!(domWindow instanceof Ci.nsIDOMChromeWindow))
+        return;
+      // In persistent mode, window might be opened long ago and might be
+      // already initialized.
+      //
+      // In this case, we want to keep this callback synchronous so that we will call
+      // `onTabOpenListener` synchronously and before the sync IPc message `juggler:content-ready`.
+      if (domWindow.document.readyState === 'uninitialized' || domWindow.document.readyState === 'loading') {
+        // For non-initialized windows, DOMContentLoaded initializes gBrowser
+        // and starts tab loading (see //browser/base/content/browser.js), so we
+        // are guaranteed to call `onTabOpenListener` before the sync IPC message
+        // `juggler:content-ready`.
+        await helper.awaitEvent(domWindow, 'DOMContentLoaded');
+      }
+
+      if (!domWindow.gBrowser)
+        return;
+      const tabContainer = domWindow.gBrowser.tabContainer;
+      domWindowTabListeners.set(domWindow, [
+        helper.addEventListener(tabContainer, 'TabOpen', event => onTabOpenListener(appWindow, domWindow, event)),
+        helper.addEventListener(tabContainer, 'TabClose', onTabCloseListener),
+      ]);
+      for (const tab of domWindow.gBrowser.tabs)
+        onTabOpenListener(appWindow, domWindow, { target: tab });
+    };
+
+    const onCloseWindow = window => {
+      const domWindow = window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowInternal || Ci.nsIDOMWindow);
+      if (!(domWindow instanceof Ci.nsIDOMChromeWindow))
+        return;
+      if (!domWindow.gBrowser)
+        return;
+
+      const listeners = domWindowTabListeners.get(domWindow) || [];
+      domWindowTabListeners.delete(domWindow);
+      helper.removeListeners(listeners);
+      for (const tab of domWindow.gBrowser.tabs)
+        onTabCloseListener({ target: tab });
+    };
 
     const extHelperAppSvc = Cc["@mozilla.org/uriloader/external-helper-app-service;1"].getService(Ci.nsIExternalHelperAppService);
     extHelperAppSvc.setDownloadInterceptor(new DownloadInterceptor(this));
+
+    Services.wm.addListener({ onOpenWindow, onCloseWindow });
+    for (const win of Services.wm.getEnumerator(null))
+      onOpenWindow(win);
+  }
+
+  setBrowserProxy(proxy) {
+    this._browserProxy = proxy;
+  }
+
+  getProxyInfo(channel) {
+    const originAttributes = channel.loadInfo && channel.loadInfo.originAttributes;
+    const browserContext = originAttributes ? this.browserContextForUserContextId(originAttributes.userContextId) : null;
+    // Prefer context proxy and fallback to browser-level proxy.
+    const proxyInfo = (browserContext && browserContext._proxy) || this._browserProxy;
+    if (!proxyInfo || proxyInfo.bypass.some(domainSuffix => channel.URI.host.endsWith(domainSuffix)))
+      return null;
+    return proxyInfo;
   }
 
   defaultContext() {
@@ -257,38 +260,46 @@ class TargetRegistry {
   }
 
   async newPage({browserContextId}) {
-    let window;
-    let created = false;
-    const windowsIt = Services.wm.getEnumerator('navigator:browser');
-    if (windowsIt.hasMoreElements()) {
-      window = windowsIt.getNext();
-    } else {
-      const features = "chrome,dialog=no,all";
-      const args = Cc["@mozilla.org/supports-string;1"].createInstance(Ci.nsISupportsString);
-      args.data = 'about:blank';
-      window = Services.ww.openWindow(null, AppConstants.BROWSER_CHROME_URL, '_blank', features, args);
-      created = true;
-    }
-    await waitForWindowReady(window);
     const browserContext = this.browserContextForId(browserContextId);
-    const tab = window.gBrowser.addTab('about:blank', {
-      userContextId: browserContext.userContextId,
-      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-    });
-    const target = await new Promise(fulfill => {
-      const listener = helper.on(this, TargetRegistry.Events.TargetCreated, ({target}) => {
-        if (target._tab === tab) {
-          helper.removeListeners([listener]);
-          fulfill(target);
-        }
-      });
-    });
-    if (created) {
-      window.gBrowser.removeTab(window.gBrowser.getTabForBrowser(window.gBrowser.getBrowserAtIndex(0)), {
-        skipPermitUnload: true,
-      });
-    }
-    window.gBrowser.selectedTab = tab;
+    const features = "chrome,dialog=no,all";
+    // See _callWithURIToLoad in browser.js for the structure of window.arguments
+    // window.arguments[1]: unused (bug 871161)
+    //                 [2]: referrerInfo (nsIReferrerInfo)
+    //                 [3]: postData (nsIInputStream)
+    //                 [4]: allowThirdPartyFixup (bool)
+    //                 [5]: userContextId (int)
+    //                 [6]: originPrincipal (nsIPrincipal)
+    //                 [7]: originStoragePrincipal (nsIPrincipal)
+    //                 [8]: triggeringPrincipal (nsIPrincipal)
+    //                 [9]: allowInheritPrincipal (bool)
+    //                 [10]: csp (nsIContentSecurityPolicy)
+    //                 [11]: nsOpenWindowInfo
+    const args = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
+    const urlSupports = Cc["@mozilla.org/supports-string;1"].createInstance(
+      Ci.nsISupportsString
+    );
+    urlSupports.data = 'about:blank';
+    args.appendElement(urlSupports); // 0
+    args.appendElement(undefined); // 1
+    args.appendElement(undefined); // 2
+    args.appendElement(undefined); // 3
+    args.appendElement(undefined); // 4
+    const userContextIdSupports = Cc[
+      "@mozilla.org/supports-PRUint32;1"
+    ].createInstance(Ci.nsISupportsPRUint32);
+    userContextIdSupports.data = browserContext.userContextId;
+    args.appendElement(userContextIdSupports); // 5
+    args.appendElement(undefined); // 6
+    args.appendElement(undefined); // 7
+    args.appendElement(Services.scriptSecurityManager.getSystemPrincipal()); // 8
+
+    const window = Services.ww.openWindow(null, AppConstants.BROWSER_CHROME_URL, '_blank', features, args);
+    await waitForWindowReady(window);
+    if (window.gBrowser.browsers.length !== 1)
+      throw new Error(`Unexpected number of tabs in the new window: ${window.gBrowser.browsers.length}`);
+    const browser = window.gBrowser.browsers[0];
+    const target = this._browserToTarget.get(browser);
+    browser.focus();
     if (browserContext.settings.timezoneId) {
       if (await target.hasFailedToOverrideTimezone())
         throw new Error('Failed to override timezone');
@@ -303,48 +314,54 @@ class TargetRegistry {
   targetForBrowser(browser) {
     return this._browserToTarget.get(browser);
   }
-
-  _targetForChannel(channel) {
-    const channelId = channel.channelId;
-    for (const target of this._browserToTarget.values()) {
-      if (target._channelIds.has(channelId))
-        return target;
-    }
-    return null;
-  }
 }
 
 class PageTarget {
-  constructor(registry, gBrowser, tab, linkedBrowser, browserContext, opener) {
+  constructor(registry, win, tab, browserContext, opener) {
     EventEmitter.decorate(this);
 
     this._targetId = helper.generateId();
     this._registry = registry;
-    this._gBrowser = gBrowser;
+    this._window = win;
+    this._gBrowser = win.gBrowser;
     this._tab = tab;
-    this._linkedBrowser = linkedBrowser;
+    this._linkedBrowser = tab.linkedBrowser;
     this._browserContext = browserContext;
     this._viewportSize = undefined;
     this._url = 'about:blank';
     this._openerId = opener ? opener.id() : undefined;
     this._channel = SimpleChannel.createForMessageManager(`browser::page[${this._targetId}]`, this._linkedBrowser.messageManager);
-    this._channelIds = new Set();
+    this._screencastInfo = undefined;
+    this._dialogs = new Map();
 
     const navigationListener = {
-      QueryInterface: ChromeUtils.generateQI([ Ci.nsIWebProgressListener]),
+      QueryInterface: ChromeUtils.generateQI([Ci.nsIWebProgressListener, Ci.nsISupportsWeakReference]),
       onLocationChange: (aWebProgress, aRequest, aLocation) => this._onNavigated(aLocation),
     };
     this._eventListeners = [
+      helper.addObserver(this._updateModalDialogs.bind(this), 'tabmodal-dialog-loaded'),
       helper.addProgressListener(tab.linkedBrowser, navigationListener, Ci.nsIWebProgress.NOTIFY_LOCATION),
+      helper.addEventListener(this._linkedBrowser, 'DOMModalDialogClosed', event => this._updateModalDialogs()),
     ];
 
     this._disposed = false;
-    if (browserContext) {
-      browserContext.pages.add(this);
-      browserContext._firstPageCallback();
-    }
+    browserContext.pages.add(this);
     this._registry._browserToTarget.set(this._linkedBrowser, this);
     this._registry._browserBrowsingContextToTarget.set(this._linkedBrowser.browsingContext, this);
+
+    this._registry.emit(TargetRegistry.Events.TargetCreated, this);
+  }
+
+  dialog(dialogId) {
+    return this._dialogs.get(dialogId);
+  }
+
+  dialogs() {
+    return [...this._dialogs.values()];
+  }
+
+  async windowReady() {
+    await waitForWindowReady(this._window);
   }
 
   linkedBrowser() {
@@ -355,40 +372,64 @@ class PageTarget {
     return this._browserContext;
   }
 
-  async setViewportSize(viewportSize) {
-    this._viewportSize = viewportSize;
-    const actualSize = setViewportSizeForBrowser(viewportSize, this._linkedBrowser);
+  updateTouchOverride() {
+    this._linkedBrowser.browsingContext.touchEventsOverride = this._browserContext.touchOverride ? 'enabled' : 'none';
+  }
+
+  updateUserAgent() {
+    this._linkedBrowser.browsingContext.customUserAgent = this._browserContext.defaultUserAgent;
+  }
+
+  _updateModalDialogs() {
+    const prompts = new Set(this._linkedBrowser.tabModalPromptBox ? this._linkedBrowser.tabModalPromptBox.listPrompts() : []);
+    for (const dialog of this._dialogs.values()) {
+      if (!prompts.has(dialog.prompt())) {
+        this._dialogs.delete(dialog.id());
+        this.emit(PageTarget.Events.DialogClosed, dialog);
+      } else {
+        prompts.delete(dialog.prompt());
+      }
+    }
+    for (const prompt of prompts) {
+      const dialog = Dialog.createIfSupported(prompt);
+      if (!dialog)
+        continue;
+      this._dialogs.set(dialog.id(), dialog);
+      this.emit(PageTarget.Events.DialogOpened, dialog);
+    }
+  }
+
+  async updateViewportSize() {
+    // Viewport size is defined by three arguments:
+    // 1. default size. Could be explicit if set as part of `window.open` call, e.g.
+    //   `window.open(url, title, 'width=400,height=400')`
+    // 2. page viewport size
+    // 3. browserContext viewport size
+    //
+    // The "default size" (1) is only respected when the page is opened.
+    // Otherwise, explicitly set page viewport prevales over browser context
+    // default viewport.
+    const viewportSize = this._viewportSize || this._browserContext.defaultViewportSize;
+    const actualSize = await setViewportSizeForBrowser(viewportSize, this._linkedBrowser, this._window);
     await this._channel.connect('').send('awaitViewportDimensions', {
       width: actualSize.width,
       height: actualSize.height
     });
   }
 
-  connectSession(session) {
-    this._initSession(session);
-    this._channel.connect('').send('attach', { sessionId: session.sessionId() });
+  async setViewportSize(viewportSize) {
+    this._viewportSize = viewportSize;
+    await this.updateViewportSize();
   }
 
-  disconnectSession(session) {
-    if (!this._disposed)
-      this._channel.connect('').emit('detach', { sessionId: session.sessionId() });
-  }
-
-  async close(runBeforeUnload = false) {
-    await this._gBrowser.removeTab(this._tab, {
+  close(runBeforeUnload = false) {
+    this._gBrowser.removeTab(this._tab, {
       skipPermitUnload: !runBeforeUnload,
     });
   }
 
-  _initSession(session) {
-    const pageHandler = new PageHandler(this, session, this._channel);
-    const networkHandler = new NetworkHandler(this, session, this._channel);
-    session.registerHandler('Page', pageHandler);
-    session.registerHandler('Network', networkHandler);
-    session.registerHandler('Runtime', new RuntimeHandler(session, this._channel));
-    session.registerHandler('Accessibility', new AccessibilityHandler(session, this._channel));
-    pageHandler.enable();
-    networkHandler.enable();
+  channel() {
+    return this._channel;
   }
 
   id() {
@@ -399,7 +440,7 @@ class PageTarget {
     return {
       targetId: this.id(),
       type: 'page',
-      browserContextId: this._browserContext ? this._browserContext.browserContextId : undefined,
+      browserContextId: this._browserContext.browserContextId,
       openerId: this._openerId,
     };
   }
@@ -429,15 +470,75 @@ class PageTarget {
     return await this._channel.connect('').send('hasFailedToOverrideTimezone').catch(e => true);
   }
 
+  async _startVideoRecording({width, height, scale, dir}) {
+    // On Mac the window may not yet be visible when TargetCreated and its
+    // NSWindow.windowNumber may be -1, so we wait until the window is known
+    // to be initialized and visible.
+    await this.windowReady();
+    const file = OS.Path.join(dir, helper.generateId() + '.webm');
+    if (width < 10 || width > 10000 || height < 10 || height > 10000)
+      throw new Error("Invalid size");
+    if (scale && (scale <= 0 || scale > 1))
+      throw new Error("Unsupported scale");
+
+    const screencast = Cc['@mozilla.org/juggler/screencast;1'].getService(Ci.nsIScreencastService);
+    const docShell = this._gBrowser.ownerGlobal.docShell;
+    // Exclude address bar and navigation control from the video.
+    const rect = this.linkedBrowser().getBoundingClientRect();
+    const devicePixelRatio = this._window.devicePixelRatio;
+    const videoSessionId = screencast.startVideoRecording(docShell, file, width, height, scale || 0, devicePixelRatio * rect.top);
+    this._screencastInfo = { videoSessionId, file };
+    this.emit(PageTarget.Events.ScreencastStarted);
+  }
+
+  async _stopVideoRecording() {
+    if (!this._screencastInfo)
+      throw new Error('No video recording in progress');
+    const screencastInfo = this._screencastInfo;
+    this._screencastInfo = undefined;
+    const screencast = Cc['@mozilla.org/juggler/screencast;1'].getService(Ci.nsIScreencastService);
+    const result = new Promise(resolve =>
+      Services.obs.addObserver(function onStopped(subject, topic, data) {
+        if (screencastInfo.videoSessionId != data)
+          return;
+
+        Services.obs.removeObserver(onStopped, 'juggler-screencast-stopped');
+        resolve();
+      }, 'juggler-screencast-stopped')
+    );
+    screencast.stopVideoRecording(screencastInfo.videoSessionId);
+    return result;
+  }
+
+  screencastInfo() {
+    return this._screencastInfo;
+  }
+
   dispose() {
     this._disposed = true;
-    if (this._browserContext)
-      this._browserContext.pages.delete(this);
+    if (this._screencastInfo)
+      this._stopVideoRecording().catch(e => dump(`stopVideoRecording failed:\n${e}\n`));
+    this._browserContext.pages.delete(this);
     this._registry._browserToTarget.delete(this._linkedBrowser);
     this._registry._browserBrowsingContextToTarget.delete(this._linkedBrowser.browsingContext);
-    helper.removeListeners(this._eventListeners);
+    try {
+      helper.removeListeners(this._eventListeners);
+    } catch (e) {
+      // In some cases, removing listeners from this._linkedBrowser fails
+      // because it is already half-destroyed.
+      if (e)
+        dump(e.message + '\n' + e.stack + '\n');
+    }
+    this._registry.emit(TargetRegistry.Events.TargetDestroyed, this);
   }
 }
+
+PageTarget.Events = {
+  ScreencastStarted: Symbol('PageTarget.ScreencastStarted'),
+  Crashed: Symbol('PageTarget.Crashed'),
+  DialogOpened: Symbol('PageTarget.DialogOpened'),
+  DialogClosed: Symbol('PageTarget.DialogClosed'),
+};
 
 class BrowserContext {
   constructor(registry, browserContextId, removeOnDetach) {
@@ -454,25 +555,28 @@ class BrowserContext {
     this._permissions = new Map();
     this._registry._browserContextIdToBrowserContext.set(this.browserContextId, this);
     this._registry._userContextIdToBrowserContext.set(this.userContextId, this);
+    this._proxy = null;
     this.removeOnDetach = removeOnDetach;
-    this.proxy = undefined;
     this.extraHTTPHeaders = undefined;
     this.httpCredentials = undefined;
     this.requestInterceptionEnabled = undefined;
     this.ignoreHTTPSErrors = undefined;
     this.downloadOptions = undefined;
     this.defaultViewportSize = undefined;
+    this.defaultUserAgent = null;
+    this.touchOverride = false;
+    this.screencastOptions = undefined;
     this.scriptsToEvaluateOnNewDocument = [];
     this.bindings = [];
     this.settings = {};
     this.pages = new Set();
-    this._firstPagePromise = new Promise(f => this._firstPageCallback = f);
   }
 
   async destroy() {
     if (this.userContextId !== 0) {
       ContextualIdentityService.remove(this.userContextId);
-      ContextualIdentityService.closeContainerTabs(this.userContextId);
+      for (const page of this.pages)
+        page.close();
       if (this.pages.size) {
         await new Promise(f => {
           const listener = helper.on(this._registry, TargetRegistry.Events.TargetDestroyed, () => {
@@ -486,6 +590,12 @@ class BrowserContext {
     }
     this._registry._browserContextIdToBrowserContext.delete(this.browserContextId);
     this._registry._userContextIdToBrowserContext.delete(this.userContextId);
+  }
+
+  setProxy(proxy) {
+    // Clear AuthCache.
+    Services.obs.notifyObservers(null, "net:clear-active-logins");
+    this._proxy = proxy;
   }
 
   setIgnoreHTTPSErrors(ignoreHTTPSErrors) {
@@ -504,18 +614,21 @@ class BrowserContext {
     }
   }
 
+  async setDefaultUserAgent(userAgent) {
+    this.defaultUserAgent = userAgent;
+    for (const page of this.pages)
+      page.updateUserAgent();
+  }
+
+  setTouchOverride(touchOverride) {
+    this.touchOverride = touchOverride;
+    for (const page of this.pages)
+      page.updateTouchOverride();
+  }
+
   async setDefaultViewport(viewport) {
     this.defaultViewportSize = viewport ? viewport.viewportSize : undefined;
-    if (!this.userContextId) {
-      // First page in the default context comes before onTabOpenListener
-      // so we don't set default viewport. Wait for it here and ensure the viewport.
-      await this._firstPagePromise;
-    }
-    const promises = Array.from(this.pages).map(async page => {
-      // Resize to new default, unless the page has a custom viewport.
-      if (!page._viewportSize)
-        await page.setViewportSize(this.defaultViewportSize);
-    });
+    const promises = Array.from(this.pages).map(page => page.updateViewportSize());
     await Promise.all([
       this.applySetting('deviceScaleFactor', viewport ? viewport.deviceScaleFactor : undefined),
       ...promises,
@@ -609,6 +722,7 @@ class BrowserContext {
         cookie.expires === undefined ? Date.now() + HUNDRED_YEARS : cookie.expires,
         { userContextId: this.userContextId || undefined } /* originAttributes */,
         protocolToSameSite[cookie.sameSite],
+        Ci.nsICookie.SCHEME_UNSET
       );
     }
   }
@@ -644,7 +758,77 @@ class BrowserContext {
     }
     return result;
   }
+
+  async setScreencastOptions(options) {
+    this.screencastOptions = options;
+    if (!options)
+      return;
+    const promises = [];
+    for (const page of this.pages)
+      promises.push(page._startVideoRecording(options));
+    await Promise.all(promises);
+  }
 }
+
+class Dialog {
+  static createIfSupported(prompt) {
+    const type = prompt.args.promptType;
+    switch (type) {
+      case 'alert':
+      case 'alertCheck':
+        return new Dialog(prompt, 'alert');
+      case 'prompt':
+        return new Dialog(prompt, 'prompt');
+      case 'confirm':
+      case 'confirmCheck':
+        return new Dialog(prompt, 'confirm');
+      case 'confirmEx':
+        return new Dialog(prompt, 'beforeunload');
+      default:
+        return null;
+    };
+  }
+
+  constructor(prompt, type) {
+    this._id = helper.generateId();
+    this._type = type;
+    this._prompt = prompt;
+  }
+
+  id() {
+    return this._id;
+  }
+
+  message() {
+    return this._prompt.ui.infoBody.textContent;
+  }
+
+  type() {
+    return this._type;
+  }
+
+  prompt() {
+    return this._prompt;
+  }
+
+  dismiss() {
+    if (this._prompt.ui.button1)
+      this._prompt.ui.button1.click();
+    else
+      this._prompt.ui.button0.click();
+  }
+
+  defaultValue() {
+    return this._prompt.ui.loginTextbox.value;
+  }
+
+  accept(promptValue) {
+    if (typeof promptValue === 'string' && this._type === 'prompt')
+      this._prompt.ui.loginTextbox.value = promptValue;
+    this._prompt.ui.button0.click();
+  }
+}
+
 
 function dirPath(path) {
   return path.substring(0, path.lastIndexOf('/') + 1);
@@ -663,19 +847,16 @@ async function waitForWindowReady(window) {
       }, "browser-delayed-startup-finished");
     }));
   }
-  if (window.document.readyState !== 'complete') {
-    await new Promise(fulfill => {
-      window.addEventListener('load', function listener() {
-        window.removeEventListener('load', listener);
-        fulfill();
-      });
-    });
-  }
+  if (window.document.readyState !== 'complete')
+    await helper.awaitEvent(window, 'load');
 }
 
-function setViewportSizeForBrowser(viewportSize, browser) {
+async function setViewportSizeForBrowser(viewportSize, browser, window) {
+  await waitForWindowReady(window);
   if (viewportSize) {
     const {width, height} = viewportSize;
+    const rect = browser.getBoundingClientRect();
+    window.resizeBy(width - rect.width, height - rect.height);
     browser.style.setProperty('min-width', width + 'px');
     browser.style.setProperty('min-height', height + 'px');
     browser.style.setProperty('max-width', width + 'px');
@@ -697,5 +878,6 @@ TargetRegistry.Events = {
   DownloadFinished: Symbol('TargetRegistry.Events.DownloadFinished'),
 };
 
-var EXPORTED_SYMBOLS = ['TargetRegistry'];
+var EXPORTED_SYMBOLS = ['TargetRegistry', 'PageTarget'];
 this.TargetRegistry = TargetRegistry;
+this.PageTarget = PageTarget;

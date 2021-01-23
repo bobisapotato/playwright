@@ -189,6 +189,16 @@ networkTypes.SecurityDetails = {
   validTo: t.Number,
 };
 
+networkTypes.ResourceTiming = {
+  startTime: t.Number,
+  domainLookupStart: t.Number,
+  domainLookupEnd: t.Number,
+  connectStart: t.Number,
+  secureConnectionStart: t.Number,
+  connectEnd: t.Number,
+  requestStart: t.Number,
+  responseStart: t.Number,
+};
 
 const Browser = {
   targets: ['browser'],
@@ -215,6 +225,9 @@ const Browser = {
       uuid: t.String,
       canceled: t.Optional(t.Boolean),
       error: t.Optional(t.String),
+    },
+    'screencastFinished': {
+      screencastId: t.String,
     },
   },
 
@@ -258,13 +271,25 @@ const Browser = {
         headers: t.Array(networkTypes.HTTPHeader),
       },
     },
-    'setProxy': {
+    'setBrowserProxy': {
+      params: {
+        type: t.Enum(['http', 'https', 'socks', 'socks4']),
+        bypass: t.Array(t.String),
+        host: t.String,
+        port: t.Number,
+        username: t.Optional(t.String),
+        password: t.Optional(t.String),
+      },
+    },
+    'setContextProxy': {
       params: {
         browserContextId: t.Optional(t.String),
         type: t.Enum(['http', 'https', 'socks', 'socks4']),
         bypass: t.Array(t.String),
         host: t.String,
         port: t.Number,
+        username: t.Optional(t.String),
+        password: t.Optional(t.String),
       },
     },
     'setHTTPCredentials': {
@@ -395,6 +420,15 @@ const Browser = {
         colorScheme: t.Nullable(t.Enum(['dark', 'light', 'no-preference'])),
       },
     },
+    'setScreencastOptions': {
+      params: {
+        browserContextId: t.Optional(t.String),
+        dir: t.String,
+        width: t.Number,
+        height: t.Number,
+        scale: t.Optional(t.Number),
+      },
+    },
   },
 };
 
@@ -426,9 +460,11 @@ const Network = {
       status: t.Number,
       statusText: t.String,
       headers: t.Array(networkTypes.HTTPHeader),
+      timing: networkTypes.ResourceTiming,
     },
     'requestFinished': {
       requestId: t.String,
+      responseEndTime: t.Number,
     },
     'requestFailed': {
       requestId: t.String,
@@ -455,6 +491,7 @@ const Network = {
     'resumeInterceptedRequest': {
       params: {
         requestId: t.String,
+        url: t.Optional(t.String),
         method: t.Optional(t.String),
         headers: t.Optional(t.Array(networkTypes.HTTPHeader)),
         postData: t.Optional(t.String),
@@ -628,6 +665,38 @@ const Page = {
       workerId: t.String,
       message: t.String,
     },
+    'screencastStarted': {
+      screencastId: t.String,
+      file: t.String,
+    },
+    'webSocketCreated': {
+      frameId: t.String,
+      wsid: t.String,
+      requestURL: t.String,
+    },
+    'webSocketOpened': {
+      frameId: t.String,
+      requestId: t.String,
+      wsid: t.String,
+      effectiveURL: t.String,
+    },
+    'webSocketClosed': {
+      frameId: t.String,
+      wsid: t.String,
+      error: t.String,
+    },
+    'webSocketFrameSent': {
+      frameId: t.String,
+      wsid: t.String,
+      opcode: t.Number,
+      data: t.String,
+    },
+    'webSocketFrameReceived': {
+      frameId: t.String,
+      wsid: t.String,
+      opcode: t.Number,
+      data: t.String,
+    },
   },
 
   methods: {
@@ -652,6 +721,10 @@ const Page = {
     'setViewportSize': {
       params: {
         viewportSize: t.Nullable(pageTypes.Size),
+      },
+    },
+    'bringToFront': {
+      params: {
       },
     },
     'setEmulatedMedia': {
@@ -712,27 +785,21 @@ const Page = {
         frameId: t.String,
       },
       returns: {
-        navigationId: t.Nullable(t.String),
-        navigationURL: t.Nullable(t.String),
-      }
+        success: t.Boolean,
+      },
     },
     'goForward': {
       params: {
         frameId: t.String,
       },
       returns: {
-        navigationId: t.Nullable(t.String),
-        navigationURL: t.Nullable(t.String),
-      }
+        success: t.Boolean,
+      },
     },
     'reload': {
       params: {
         frameId: t.String,
       },
-      returns: {
-        navigationId: t.String,
-        navigationURL: t.String,
-      }
     },
     'getBoundingBox': {
       params: {
@@ -793,6 +860,13 @@ const Page = {
         defaultPrevented: t.Boolean,
       }
     },
+    'dispatchTapEvent': {
+      params: {
+        x: t.Number,
+        y: t.Number,
+        modifiers: t.Number,
+      }
+    },
     'dispatchMouseEvent': {
       params: {
         type: t.String,
@@ -830,6 +904,16 @@ const Page = {
         workerId: t.String,
         message: t.String,
       },
+    },
+    'startVideoRecording': {
+      params: {
+        file: t.String,
+        width: t.Number,
+        height: t.Number,
+        scale: t.Optional(t.Number),
+      },
+    },
+    'stopVideoRecording': {
     },
   },
 };

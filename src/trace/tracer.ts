@@ -1,0 +1,297 @@
+/**
+ * Copyright (c) Microsoft Corporation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import { ActionListener, ActionMetadata, BrowserContext, ContextListener, contextListeners, Video } from '../server/browserContext';
+import type { SnapshotterResource as SnapshotterResource, SnapshotterBlob, SnapshotterDelegate } from './snapshotter';
+import * as trace from './traceTypes';
+import * as path from 'path';
+import * as util from 'util';
+import * as fs from 'fs';
+import { calculateSha1, createGuid, getFromENV, mkdirIfNeeded, monotonicTime } from '../utils/utils';
+import { Page } from '../server/page';
+import { Snapshotter } from './snapshotter';
+import { ElementHandle } from '../server/dom';
+import { helper, RegisteredListener } from '../server/helper';
+import { DEFAULT_TIMEOUT } from '../utils/timeoutSettings';
+import { ProgressResult } from '../server/progress';
+import { Dialog } from '../server/dialog';
+import { Frame, NavigationEvent } from '../server/frames';
+
+const fsWriteFileAsync = util.promisify(fs.writeFile.bind(fs));
+const fsAppendFileAsync = util.promisify(fs.appendFile.bind(fs));
+const fsAccessAsync = util.promisify(fs.access.bind(fs));
+const envTrace = getFromENV('PW_TRACE_DIR');
+
+export function installTracer() {
+  contextListeners.add(new Tracer());
+}
+
+class Tracer implements ContextListener {
+  private _contextTracers = new Map<BrowserContext, ContextTracer>();
+
+  async onContextCreated(context: BrowserContext): Promise<void> {
+    const traceDir = envTrace || context._options._traceDir;
+    if (!traceDir)
+      return;
+    const traceStorageDir = path.join(traceDir, 'resources');
+    const tracePath = path.join(traceDir, createGuid() + '.trace');
+    const contextTracer = new ContextTracer(context, traceStorageDir, tracePath);
+    this._contextTracers.set(context, contextTracer);
+  }
+
+  async onContextWillDestroy(context: BrowserContext): Promise<void> {}
+
+  async onContextDidDestroy(context: BrowserContext): Promise<void> {
+    const contextTracer = this._contextTracers.get(context);
+    if (contextTracer) {
+      await contextTracer.dispose().catch(e => {});
+      this._contextTracers.delete(context);
+    }
+  }
+}
+
+const pageIdSymbol = Symbol('pageId');
+
+class ContextTracer implements SnapshotterDelegate, ActionListener {
+  private _context: BrowserContext;
+  private _contextId: string;
+  private _traceStoragePromise: Promise<string>;
+  private _appendEventChain: Promise<string>;
+  private _writeArtifactChain: Promise<void>;
+  private _snapshotter: Snapshotter;
+  private _eventListeners: RegisteredListener[];
+  private _disposed = false;
+  private _traceFile: string;
+
+  constructor(context: BrowserContext, traceStorageDir: string, traceFile: string) {
+    this._context = context;
+    this._contextId = 'context@' + createGuid();
+    this._traceFile = traceFile;
+    this._traceStoragePromise = mkdirIfNeeded(path.join(traceStorageDir, 'sha1')).then(() => traceStorageDir);
+    this._appendEventChain = mkdirIfNeeded(traceFile).then(() => traceFile);
+    this._writeArtifactChain = Promise.resolve();
+    const event: trace.ContextCreatedTraceEvent = {
+      timestamp: monotonicTime(),
+      type: 'context-created',
+      browserName: context._browser._options.name,
+      contextId: this._contextId,
+      isMobile: !!context._options.isMobile,
+      deviceScaleFactor: context._options.deviceScaleFactor || 1,
+      viewportSize: context._options.viewport || undefined,
+    };
+    this._appendTraceEvent(event);
+    this._snapshotter = new Snapshotter(context, this);
+    this._eventListeners = [
+      helper.addEventListener(context, BrowserContext.Events.Page, this._onPage.bind(this)),
+    ];
+    this._context._actionListeners.add(this);
+  }
+
+  onBlob(blob: SnapshotterBlob): void {
+    this._writeArtifact(blob.sha1, blob.buffer);
+  }
+
+  onResource(resource: SnapshotterResource): void {
+    const event: trace.NetworkResourceTraceEvent = {
+      timestamp: monotonicTime(),
+      type: 'resource',
+      contextId: this._contextId,
+      pageId: resource.pageId,
+      frameId: resource.frameId,
+      url: resource.url,
+      contentType: resource.contentType,
+      responseHeaders: resource.responseHeaders,
+      sha1: resource.sha1,
+    };
+    this._appendTraceEvent(event);
+  }
+
+  pageId(page: Page): string {
+    return (page as any)[pageIdSymbol];
+  }
+
+  async onAfterAction(result: ProgressResult, metadata: ActionMetadata): Promise<void> {
+    try {
+      const snapshot = await this._takeSnapshot(metadata.page, typeof metadata.target === 'string' ? undefined : metadata.target);
+      const event: trace.ActionTraceEvent = {
+        timestamp: monotonicTime(),
+        type: 'action',
+        contextId: this._contextId,
+        pageId: this.pageId(metadata.page),
+        action: metadata.type,
+        selector: typeof metadata.target === 'string' ? metadata.target : undefined,
+        value: metadata.value,
+        snapshot,
+        startTime: result.startTime,
+        endTime: result.endTime,
+        stack: metadata.stack,
+        logs: result.logs.slice(),
+        error: result.error ? result.error.stack : undefined,
+      };
+      this._appendTraceEvent(event);
+    } catch (e) {
+    }
+  }
+
+  private _onPage(page: Page) {
+    const pageId = 'page@' + createGuid();
+    (page as any)[pageIdSymbol] = pageId;
+
+    const event: trace.PageCreatedTraceEvent = {
+      timestamp: monotonicTime(),
+      type: 'page-created',
+      contextId: this._contextId,
+      pageId,
+    };
+    this._appendTraceEvent(event);
+
+    page.on(Page.Events.VideoStarted, (video: Video) => {
+      if (this._disposed)
+        return;
+      const event: trace.PageVideoTraceEvent = {
+        timestamp: monotonicTime(),
+        type: 'page-video',
+        contextId: this._contextId,
+        pageId,
+        fileName: path.relative(path.dirname(this._traceFile), video._path),
+      };
+      this._appendTraceEvent(event);
+    });
+
+    page.on(Page.Events.Dialog, (dialog: Dialog) => {
+      if (this._disposed)
+        return;
+      const event: trace.DialogOpenedEvent = {
+        timestamp: monotonicTime(),
+        type: 'dialog-opened',
+        contextId: this._contextId,
+        pageId,
+        dialogType: dialog.type(),
+        message: dialog.message(),
+      };
+      this._appendTraceEvent(event);
+    });
+
+    page.on(Page.Events.InternalDialogClosed, (dialog: Dialog) => {
+      if (this._disposed)
+        return;
+      const event: trace.DialogClosedEvent = {
+        timestamp: monotonicTime(),
+        type: 'dialog-closed',
+        contextId: this._contextId,
+        pageId,
+        dialogType: dialog.type(),
+      };
+      this._appendTraceEvent(event);
+    });
+
+    page.mainFrame().on(Frame.Events.Navigation, (navigationEvent: NavigationEvent) => {
+      if (this._disposed || page.mainFrame().url() === 'about:blank')
+        return;
+      const event: trace.NavigationEvent = {
+        timestamp: monotonicTime(),
+        type: 'navigation',
+        contextId: this._contextId,
+        pageId,
+        url: navigationEvent.url,
+        sameDocument: !navigationEvent.newDocument,
+      };
+      this._appendTraceEvent(event);
+    });
+
+    page.on(Page.Events.Load, () => {
+      if (this._disposed || page.mainFrame().url() === 'about:blank')
+        return;
+      const event: trace.LoadEvent = {
+        timestamp: monotonicTime(),
+        type: 'load',
+        contextId: this._contextId,
+        pageId,
+      };
+      this._appendTraceEvent(event);
+    });
+
+    page.once(Page.Events.Close, () => {
+      if (this._disposed)
+        return;
+      const event: trace.PageDestroyedTraceEvent = {
+        timestamp: monotonicTime(),
+        type: 'page-destroyed',
+        contextId: this._contextId,
+        pageId,
+      };
+      this._appendTraceEvent(event);
+    });
+  }
+
+  private async _takeSnapshot(page: Page, target: ElementHandle | undefined, timeout: number = 0): Promise<{ sha1: string, duration: number } | undefined> {
+    if (!timeout) {
+      // Never use zero timeout to avoid stalling because of snapshot.
+      // Use 20% of the default timeout.
+      timeout = (page._timeoutSettings.timeout({}) || DEFAULT_TIMEOUT) / 5;
+    }
+    const startTime = monotonicTime();
+    const snapshot = await this._snapshotter.takeSnapshot(page, target, timeout);
+    if (!snapshot)
+      return;
+    const buffer = Buffer.from(JSON.stringify(snapshot));
+    const sha1 = calculateSha1(buffer);
+    this._writeArtifact(sha1, buffer);
+    return { sha1, duration: monotonicTime() - startTime };
+  }
+
+  async dispose() {
+    this._disposed = true;
+    this._context._actionListeners.delete(this);
+    helper.removeEventListeners(this._eventListeners);
+    this._snapshotter.dispose();
+    const event: trace.ContextDestroyedTraceEvent = {
+      timestamp: monotonicTime(),
+      type: 'context-destroyed',
+      contextId: this._contextId,
+    };
+    this._appendTraceEvent(event);
+
+    // Ensure all writes are finished.
+    await this._appendEventChain;
+    await this._writeArtifactChain;
+  }
+
+  private _writeArtifact(sha1: string, buffer: Buffer) {
+    // Save all write promises to wait for them in dispose.
+    const promise = this._innerWriteArtifact(sha1, buffer);
+    this._writeArtifactChain = this._writeArtifactChain.then(() => promise);
+  }
+
+  private async _innerWriteArtifact(sha1: string, buffer: Buffer): Promise<void> {
+    const traceDirectory = await this._traceStoragePromise;
+    const filePath = path.join(traceDirectory, sha1);
+    try {
+      await fsAccessAsync(filePath);
+    } catch (e) {
+      // File does not exist - write it.
+      await fsWriteFileAsync(filePath, buffer);
+    }
+  }
+
+  private _appendTraceEvent(event: any) {
+    // Serialize all writes to the trace file.
+    this._appendEventChain = this._appendEventChain.then(async traceFile => {
+      await fsAppendFileAsync(traceFile, JSON.stringify(event) + '\n');
+      return traceFile;
+    });
+  }
+}

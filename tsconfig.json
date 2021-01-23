@@ -7,9 +7,11 @@
     "rootDir": "./src",
     "outDir": "./lib",
     "strict": true,
-    "declaration": false
+    "allowJs": true,
+    "declaration": false,
+    "jsx": "react"
   },
   "compileOnSave": true,
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": ["src/**/*.ts", "src/**/*.js"],
+  "exclude": ["node_modules", "src/.eslintrc.js", "src/cli/traceViewer/web/**"]
 }

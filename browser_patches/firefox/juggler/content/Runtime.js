@@ -132,7 +132,7 @@ class Runtime {
           return;
         }
         const errorWindow = Services.wm.getOuterWindowWithId(message.outerWindowID);
-        if (message.category === 'Web Worker' && (message.flags & Ci.nsIScriptError.exceptionFlag)) {
+        if (message.category === 'Web Worker' && message.logLevel === Ci.nsIConsoleMessage.error) {
           emitEvent(this.events.onErrorFromWorker, errorWindow, message.message, '' + message.stack);
           return;
         }
@@ -167,7 +167,7 @@ class Runtime {
     const consoleObserver = ({wrappedJSObject}, topic, data) => {
       const executionContext = Array.from(this._executionContexts.values()).find(context => {
         const domWindow = context._domWindow;
-        return domWindow && domWindow.windowUtils.currentInnerWindowID === wrappedJSObject.innerID;
+        return domWindow && domWindow.windowGlobalChild.innerWindowId === wrappedJSObject.innerID;
       });
       if (!executionContext)
         return;

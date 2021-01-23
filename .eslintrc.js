@@ -1,11 +1,13 @@
 module.exports = {
     parser: '@typescript-eslint/parser',
-    plugins: ['@typescript-eslint'],
+    plugins: ['@typescript-eslint', 'notice'],
     parserOptions: {
-      project: './tsconfig.json',
       ecmaVersion: 9,
       sourceType: 'module',
     },
+    extends: [
+      'plugin:react-hooks/recommended'
+    ],
 
     /**
      * ESLint rules
@@ -66,6 +68,7 @@ module.exports = {
         "radix": 2,
         "valid-typeof": 2,
         "no-implicit-globals": [2],
+        "no-unused-expressions": [2, { "allowShortCircuit": true, "allowTernary": true, "allowTaggedTemplates": true}],
 
         // es2015 features
         "require-yield": 2,
@@ -108,7 +111,10 @@ module.exports = {
             "beforeColon": false
         }],
 
-        // type-aware rules
-        "@typescript-eslint/no-unnecessary-type-assertion": 2,
+        // copyright
+        "notice/notice": [2, {
+            "mustMatch": "Copyright",
+            "templateFile": "./utils/copyright.js",
+        }],
     }
 };

@@ -14,30 +14,19 @@
  * limitations under the License.
  */
 
-import { BrowserContextBase } from '../browserContext';
-import { Events } from '../events';
-import * as frames from '../frames';
-import { Page } from '../page';
-import { RecorderController } from './recorderController';
+import { BrowserContext, ContextListener, contextListeners } from '../server/browserContext';
+import { isDebugMode } from '../utils/utils';
+import * as consoleApiSource from '../generated/consoleApiSource';
 
-export class DebugController {
-  private _context: BrowserContextBase;
+export function installDebugController() {
+  contextListeners.add(new DebugController());
+}
 
-  constructor(context: BrowserContextBase) {
-    this._context = context;
-    const installInFrame = async (frame: frames.Frame) => {
-      try {
-        const mainContext = await frame._mainContext();
-        await mainContext.debugScript();
-      } catch (e) {
-      }
-    };
-
-    context.on(Events.BrowserContext.Page, (page: Page) => {
-      for (const frame of page.frames())
-        installInFrame(frame);
-      page.on(Events.Page.FrameNavigated, installInFrame);
-      new RecorderController(page);
-    });
+class DebugController implements ContextListener {
+  async onContextCreated(context: BrowserContext): Promise<void> {
+    if (isDebugMode())
+      context.extendInjectedScript(consoleApiSource.source);
   }
+  async onContextWillDestroy(context: BrowserContext): Promise<void> {}
+  async onContextDidDestroy(context: BrowserContext): Promise<void> {}
 }

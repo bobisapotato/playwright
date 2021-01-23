@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-const { Playwright } = require('./lib/server/playwright');
-const { Electron } = require('./lib/server/electron');
-const path = require('path');
-
-const playwright = new Playwright(__dirname, require(path.join(__dirname, 'browsers.json'))['browsers']);
-playwright.electron = new Electron();
-module.exports = playwright;
+const { setUnderTest } = require('./lib/utils/utils');
+setUnderTest(); // Note: we must call setUnderTest before initializing.
+module.exports = require('./lib/inprocess');

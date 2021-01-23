@@ -15,128 +15,111 @@
  * limitations under the License.
  */
 
+//@ts-check
+
 const playwright = require('../../');
+const fs = require('fs');
 const path = require('path');
-const Source = require('./Source');
-const Message = require('./Message');
+const { parseApi } = require('./api_parser');
+const missingDocs = require('./missingDocs');
+const md = require('../markdown');
 
-const {spawnSync} = require('child_process');
-
-const os = require('os');
+/** @typedef {import('./documentation').Type} Type */
+/** @typedef {import('../markdown').MarkdownNode} MarkdownNode */
 
 const PROJECT_DIR = path.join(__dirname, '..', '..');
-const VERSION = require(path.join(PROJECT_DIR, 'package.json')).version;
 
-const RED_COLOR = '\x1b[31m';
-const YELLOW_COLOR = '\x1b[33m';
-const RESET_COLOR = '\x1b[0m';
+const dirtyFiles = new Set();
 
-run();
+run().catch(e => {
+  console.error(e);
+  process.exit(1);
+});;
 
 async function run() {
-  const startTime = Date.now();
+  const documentation = parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'api'));
+  // This validates member links.
+  documentation.setLinkRenderer(() => undefined);
+  documentation.filterForLanguage('js');
 
-  /** @type {!Array<!Message>} */
-  const messages = [];
-  let changedFiles = false;
-
-  // Documentation checks.
+  // Patch README.md
   {
-    const readme = await Source.readFile(path.join(PROJECT_DIR, 'README.md'));
-    const contributing = await Source.readFile(path.join(PROJECT_DIR, 'CONTRIBUTING.md'));
-    const api = await Source.readFile(path.join(PROJECT_DIR, 'docs', 'api.md'));
-    const docs = await Source.readdir(path.join(PROJECT_DIR, 'docs'), '.md');
-    const mdSources = [readme, api, contributing, ...docs];
+    const versions = await getBrowserVersions();
+    const params = new Map();
+    const { chromium, firefox, webkit } = versions;
+    params.set('chromium-version', chromium);
+    params.set('firefox-version', firefox);
+    params.set('webkit-version', webkit);
+    params.set('chromium-version-badge', `[![Chromium version](https://img.shields.io/badge/chromium-${chromium}-blue.svg?logo=google-chrome)](https://www.chromium.org/Home)`);
+    params.set('firefox-version-badge', `[![Firefox version](https://img.shields.io/badge/firefox-${firefox}-blue.svg?logo=mozilla-firefox)](https://www.mozilla.org/en-US/firefox/new/)`);
+    params.set('webkit-version-badge', `[![WebKit version](https://img.shields.io/badge/webkit-${webkit}-blue.svg?logo=safari)](https://webkit.org/)`);
 
-    const preprocessor = require('./preprocessor');
-    const browserVersions = await getBrowserVersions();
-    messages.push(...(await preprocessor.runCommands(mdSources, {
-      libversion: VERSION,
-      chromiumVersion: browserVersions.chromium,
-      firefoxVersion: browserVersions.firefox,
-    })));
-    messages.push(...preprocessor.autocorrectInvalidLinks(PROJECT_DIR, mdSources, getRepositoryFiles()));
-    for (const source of mdSources.filter(source => source.hasUpdatedText()))
-      messages.push(Message.warning(`WARN: updated ${source.projectPath()}`));
+    let content = fs.readFileSync(path.join(PROJECT_DIR, 'README.md')).toString();
+    content = content.replace(/<!-- GEN:([^ ]+) -->([^<]*)<!-- GEN:stop -->/ig, (match, p1) => {
+      if (!params.has(p1)) {
+        console.log(`ERROR: Invalid generate parameter "${p1}" in "${match}"`);
+        process.exit(1);
+      }
+      return `<!-- GEN:${p1} -->${params.get(p1)}<!-- GEN:stop -->`;
+    });
+    writeAssumeNoop(path.join(PROJECT_DIR, 'README.md'), content, dirtyFiles);
+  }
 
-    const browser = await playwright.chromium.launch();
-    const page = await browser.newPage();
-    const checkPublicAPI = require('./check_public_api');
-    const jsSources = await Source.readdir(path.join(PROJECT_DIR, 'src'));
-    messages.push(...await checkPublicAPI(page, [api], jsSources));
-    await browser.close();
-
-    for (const source of mdSources) {
-      if (!source.hasUpdatedText())
+  // Validate links
+  {
+    for (const file of fs.readdirSync(path.join(PROJECT_DIR, 'docs', 'src'))) {
+      if (!file.endsWith('.md'))
         continue;
-      await source.save();
-      changedFiles = true;
+      const data = fs.readFileSync(path.join(PROJECT_DIR, 'docs', 'src', file)).toString();
+      documentation.renderLinksInText(md.parse(data));
     }
   }
 
-  // Report results.
-  const errors = messages.filter(message => message.type === 'error');
-  if (errors.length) {
-    console.log('DocLint Failures:');
-    for (let i = 0; i < errors.length; ++i) {
-      let error = errors[i].text;
-      error = error.split('\n').join('\n      ');
-      console.log(`  ${i + 1}) ${RED_COLOR}${error}${RESET_COLOR}`);
+  // Check for missing docs
+  {
+    const srcClient = path.join(PROJECT_DIR, 'src', 'client');
+    const sources = fs.readdirSync(srcClient).map(n => path.join(srcClient, n));
+    const errors = missingDocs(documentation, sources, path.join(srcClient, 'api.ts'));
+    if (errors.length) {
+      console.log('============================');
+      console.log('ERROR: missing documentation:');
+      errors.forEach(e => console.log(e));
+      console.log('============================')
+      process.exit(1);
     }
   }
-  const warnings = messages.filter(message => message.type === 'warning');
-  if (warnings.length) {
-    console.log('DocLint Warnings:');
-    for (let i = 0; i < warnings.length; ++i) {
-      let warning = warnings[i].text;
-      warning = warning.split('\n').join('\n      ');
-      console.log(`  ${i + 1}) ${YELLOW_COLOR}${warning}${RESET_COLOR}`);
-    }
+
+  if (dirtyFiles.size) {
+    console.log('============================')
+    console.log('ERROR: generated markdown files have changed, this is only error if happens in CI:');
+    [...dirtyFiles].forEach(f => console.log(f));
+    console.log('============================')
+    process.exit(1);
   }
-  let clearExit = messages.length === 0;
-  if (changedFiles) {
-    if (clearExit)
-      console.log(`${YELLOW_COLOR}Some files were updated.${RESET_COLOR}`);
-    clearExit = false;
+  process.exit(0);
+}
+
+/**
+ * @param {string} name
+ * @param {string} content
+ * @param {Set<string>} dirtyFiles
+ */
+function writeAssumeNoop(name, content, dirtyFiles) {
+  fs.mkdirSync(path.dirname(name), { recursive: true });
+  const oldContent = fs.existsSync(name) ? fs.readFileSync(name).toString() : '';
+  if (oldContent !== content) {
+    fs.writeFileSync(name, content);
+    dirtyFiles.add(name);
   }
-  console.log(`${errors.length} failures, ${warnings.length} warnings.`);
-  const runningTime = Date.now() - startTime;
-  console.log(`DocLint Finished in ${runningTime / 1000} seconds`);
-  process.exit(clearExit ? 0 : 1);
 }
 
 async function getBrowserVersions() {
-  const [chromium, firefox] = await Promise.all([
-    getChromeVersion(),
-    getFirefoxVersion(),
-  ])
-  return {
-    chromium,
-    firefox,
-  };
-}
-
-async function getChromeVersion() {
-  if (os.platform() === 'win32' || os.platform() === 'cygwin') {
-    const browser = await playwright.chromium.launch();
-    const page = await browser.newPage();
-    const userAgent = await page.evaluate('navigator.userAgent');
-    const [type] = userAgent.split(' ').filter(str => str.includes('Chrome'));
-    await browser.close();
-    return type.split('/')[1];
+  const names = ['chromium', 'firefox', 'webkit'];
+  const browsers = await Promise.all(names.map(name => playwright[name].launch()));
+  const result = {};
+  for (let i = 0; i < names.length; i++) {
+    result[names[i]] = browsers[i].version();
   }
-  const version = spawnSync(playwright.chromium.executablePath(), ['--version'], undefined).stdout.toString();
-  return version.trim().split(' ').pop();
-}
-
-function getRepositoryFiles() {
-  const out = spawnSync('git', ['ls-files'], {cwd: PROJECT_DIR});
-  return out.stdout.toString().trim().split('\n').map(file => path.join(PROJECT_DIR, file));
-}
-
-async function getFirefoxVersion() {
-  const isWin = os.platform() === 'win32' || os.platform() === 'cygwin';
-  const out = spawnSync(playwright.firefox.executablePath(), [isWin ? '/version' : '--version'], undefined);
-  const version = out.stdout.toString();
-  return version.trim().split(' ').pop();
+  await Promise.all(browsers.map(browser => browser.close()));
+  return result;
 }

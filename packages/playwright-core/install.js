@@ -14,4 +14,5 @@
  * limitations under the License.
  */
 
-/* NOTE: playwright-core does not install browsers by design. */
+// Explicitly empty install.js to avoid touching browser registry at all.
+// See https://github.com/microsoft/playwright/issues/4083

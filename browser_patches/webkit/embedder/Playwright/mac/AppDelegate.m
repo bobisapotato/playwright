@@ -237,7 +237,7 @@ const NSActivityOptions ActivityOptions =
         configuration.preferences._requestAnimationFrameEnabled = YES;
         _WKProcessPoolConfiguration *processConfiguration = [[[_WKProcessPoolConfiguration alloc] init] autorelease];
         processConfiguration.forceOverlayScrollbars = YES;
-        configuration.processPool = [[[WKProcessPool alloc] _initWithConfiguration:processConfiguration AndDataStore:configuration.websiteDataStore] autorelease];
+        configuration.processPool = [[[WKProcessPool alloc] _initWithConfiguration:processConfiguration] autorelease];
     }
     return configuration;
 }
@@ -250,8 +250,18 @@ const NSActivityOptions ActivityOptions =
     if (_noStartupWindow)
         return;
 
-    [self createNewPage:0];
-    _initialURL = nil;
+    // Force creation of the default browser context.
+    [self defaultConfiguration];
+    // Creating the first NSWindow immediately makes it invisible in headless mode,
+    // so we postpone it for 50ms. Experiments show that 10ms is not enough, and 20ms is enough.
+    // We give it 50ms just in case.
+    [NSTimer scheduledTimerWithTimeInterval: 0.05
+                                    repeats: NO
+                                      block:(void *)^(NSTimer* timer)
+    {
+        [self createNewPage:0 withURL:_initialURL ? _initialURL : @"about:blank"];
+        _initialURL = nil;
+    }];
 }
 
 - (void)_updateNewWindowKeyEquivalents
@@ -278,7 +288,11 @@ const NSActivityOptions ActivityOptions =
 
 - (WKWebView *)createNewPage:(uint64_t)sessionID
 {
-    NSString* urlString = _initialURL ? _initialURL : @"about:blank";
+    return [self createNewPage:sessionID withURL:@"about:blank"];
+}
+
+- (WKWebView *)createNewPage:(uint64_t)sessionID withURL:(NSString*)urlString
+{
     WKWebViewConfiguration *configuration = [self sessionConfiguration:sessionID];
     if (_headless)
         return [self createHeadlessPage:configuration withURL:urlString];
@@ -333,9 +347,8 @@ const NSActivityOptions ActivityOptions =
     if (!proxyBypassList || ![proxyBypassList length])
         proxyBypassList = _proxyBypassList;
     [dataStoreConfiguration setProxyConfiguration:[self proxyConfiguration:proxyServer WithBypassList:proxyBypassList]];
-    browserContext.dataStore = [[WKWebsiteDataStore alloc] _initWithConfiguration:dataStoreConfiguration];
+    browserContext.dataStore = [[[WKWebsiteDataStore alloc] _initWithConfiguration:dataStoreConfiguration] autorelease];
     browserContext.processPool = [[[WKProcessPool alloc] _initWithConfiguration:processConfiguration] autorelease];
-    [browserContext.processPool _setDownloadDelegate:self];
     [_browserContexts addObject:browserContext];
     return browserContext;
 }
@@ -358,6 +371,7 @@ const NSActivityOptions ActivityOptions =
 #pragma mark WKUIDelegate
 
 - (void)webViewDidClose:(WKWebView *)webView {
+    [self webView:webView handleJavaScriptDialog:false value:nil];
     for (NSWindow *window in _headlessWindows) {
         if (webView.window != window)
             continue;
@@ -366,6 +380,11 @@ const NSActivityOptions ActivityOptions =
         [_headlessWindows removeObject:window];
         break;
     }
+}
+
+- (void)_webView:(WKWebView *)webView getWindowFrameWithCompletionHandler:(void (^)(CGRect))completionHandler
+{
+    completionHandler([webView.window frame]);
 }
 
 - (void)webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler
@@ -428,8 +447,8 @@ const NSActivityOptions ActivityOptions =
 {
     LOG(@"decidePolicyForNavigationAction");
 
-    if (navigationAction._shouldPerformDownload) {
-        decisionHandler(_WKNavigationActionPolicyDownload);
+    if (navigationAction.shouldPerformDownload) {
+        decisionHandler(WKNavigationActionPolicyDownload);
         return;
     }
     if (navigationAction._canHandleRequest) {
@@ -449,17 +468,27 @@ const NSActivityOptions ActivityOptions =
 
     NSString *disposition = [[httpResponse allHeaderFields] objectForKey:@"Content-Disposition"];
     if (disposition && [disposition hasPrefix:@"attachment"]) {
-        decisionHandler(_WKNavigationResponsePolicyBecomeDownload);
+        decisionHandler(WKNavigationResponsePolicyDownload);
         return;
     }
     decisionHandler(WKNavigationResponsePolicyAllow);
 }
 
-#pragma mark _WKDownloadDelegate
-
-- (void)_download:(_WKDownload *)download decideDestinationWithSuggestedFilename:(NSString *)filename completionHandler:(void (^)(BOOL allowOverwrite, NSString *destination))completionHandler
+- (void)webView:(WKWebView *)webView navigationAction:(WKNavigationAction *)navigationAction didBecomeDownload:(WKDownload *)download
 {
-    completionHandler(NO, @"");
+    download.delegate = self;
+}
+
+- (void)webView:(WKWebView *)webView navigationResponse:(WKNavigationResponse *)navigationResponse didBecomeDownload:(WKDownload *)download
+{
+    download.delegate = self;
+}
+
+#pragma mark WKDownloadDelegate
+
+- (void)download:(WKDownload *)download decideDestinationUsingResponse:(NSURLResponse *)response suggestedFilename:(NSString *)suggestedFilename completionHandler:(void (^)(NSURL * _Nullable destination))completionHandler
+{
+    completionHandler(nil);
 }
 
 @end

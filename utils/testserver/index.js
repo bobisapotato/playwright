@@ -19,10 +19,15 @@ const https = require('https');
 const url = require('url');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
+const util = require('util');
 const WebSocketServer = require('ws').Server;
 
 const fulfillSymbol = Symbol('fullfil callback');
 const rejectSymbol = Symbol('reject callback');
+
+const readFileAsync = util.promisify(fs.readFile.bind(fs));
+const gzipAsync = util.promisify(zlib.gzip.bind(zlib));
 
 class TestServer {
   /**
@@ -83,14 +88,20 @@ class TestServer {
     this._gzipRoutes = new Set();
     /** @type {!Map<string, !Promise>} */
     this._requestSubscribers = new Map();
+
+    const protocol = sslOptions ? 'https' : 'http';
+    this.PORT = port;
+    this.PREFIX = `${protocol}://localhost:${port}`;
+    this.CROSS_PROCESS_PREFIX = `${protocol}://127.0.0.1:${port}`;
+    this.EMPTY_PAGE = `${protocol}://localhost:${port}/empty.html`;
   }
 
   _onSocket(socket) {
     this._sockets.add(socket);
-    // ECONNRESET is a legit error given
-    // that tab closing simply kills process.
+    // ECONNRESET and HPE_INVALID_EOF_STATE are legit errors given
+    // that tab closing aborts outgoing connections to the server.
     socket.on('error', error => {
-      if (error.code !== 'ECONNRESET')
+      if (error.code !== 'ECONNRESET' && error.code !== 'HPE_INVALID_EOF_STATE')
         throw error;
     });
     socket.once('close', () => this._sockets.delete(socket));
@@ -183,8 +194,8 @@ class TestServer {
   }
 
   /**
-   * @param {http.IncomingMessage} request 
-   * @param {http.ServerResponse} response 
+   * @param {http.IncomingMessage} request
+   * @param {http.ServerResponse} response
    */
   _onRequest(request, response) {
     request.on('error', error => {
@@ -194,12 +205,12 @@ class TestServer {
         throw error;
     });
     request.postBody = new Promise(resolve => {
-      let body = '';
-      request.on('data', chunk => body += chunk);
+      let body = Buffer.from([]);
+      request.on('data', chunk => body = Buffer.concat([body, chunk]));
       request.on('end', () => resolve(body));
     });
     const pathName = url.parse(request.url).path;
-    this.debugServer(`request ${pathName}`);
+    this.debugServer(`request ${request.method} ${pathName}`);
     if (this._auths.has(pathName)) {
       const auth = this._auths.get(pathName);
       const credentials = Buffer.from((request.headers.authorization || '').split(' ')[1] || '', 'base64').toString();
@@ -221,20 +232,22 @@ class TestServer {
     if (handler) {
       handler.call(null, request, response);
     } else {
-      const pathName = url.parse(request.url).path;
-      this.serveFile(request, response, pathName);
+      this.serveFile(request, response);
     }
   }
 
   /**
    * @param {!http.IncomingMessage} request
    * @param {!http.ServerResponse} response
-   * @param {string} pathName
+   * @param {string|undefined} filePath
    */
-  serveFile(request, response, pathName) {
-    if (pathName === '/')
-      pathName = '/index.html';
-    const filePath = path.join(this._dirPath, pathName.substring(1));
+  async serveFile(request, response, filePath) {
+    let pathName = url.parse(request.url).path;
+    if (!filePath) {
+      if (pathName === '/')
+        pathName = '/index.html';
+      filePath = path.join(this._dirPath, pathName.substring(1));
+    }
 
     if (this._cachedPathPrefix !== null && filePath.startsWith(this._cachedPathPrefix)) {
       if (request.headers['if-modified-since']) {
@@ -250,27 +263,29 @@ class TestServer {
     if (this._csp.has(pathName))
       response.setHeader('Content-Security-Policy', this._csp.get(pathName));
 
-    fs.readFile(filePath, (err, data) => {
-      if (err) {
-        response.statusCode = 404;
-        response.end(`File not found: ${filePath}`);
-        return;
-      }
-      const extension = filePath.substring(filePath.lastIndexOf('.') + 1);
-      const mimeType = extensionToMime[extension] || 'application/octet-stream';
-      const isTextEncoding = /^text\/|^application\/(javascript|json)/.test(mimeType);
-      const contentType = isTextEncoding ? `${mimeType}; charset=utf-8` : mimeType;
-      response.setHeader('Content-Type', contentType);
-      if (this._gzipRoutes.has(pathName)) {
-        response.setHeader('Content-Encoding', 'gzip');
-        const zlib = require('zlib');
-        zlib.gzip(data, (_, result) => {
-          response.end(result);
-        });
-      } else {
-        response.end(data);
-      }
-    });
+    const {err, data} = await readFileAsync(filePath).then(data => ({data})).catch(err => ({err}));
+    // The HTTP transaction might be already terminated after async hop here - do nothing in this case.
+    if (response.writableEnded)
+      return;
+    if (err) {
+      response.statusCode = 404;
+      response.end(`File not found: ${filePath}`);
+      return;
+    }
+    const extension = filePath.substring(filePath.lastIndexOf('.') + 1);
+    const mimeType = extensionToMime[extension] || 'application/octet-stream';
+    const isTextEncoding = /^text\/|^application\/(javascript|json)/.test(mimeType);
+    const contentType = isTextEncoding ? `${mimeType}; charset=utf-8` : mimeType;
+    response.setHeader('Content-Type', contentType);
+    if (this._gzipRoutes.has(pathName)) {
+      response.setHeader('Content-Encoding', 'gzip');
+      const result = await gzipAsync(data);
+      // The HTTP transaction might be already terminated after async hop here.
+      if (!response.writableEnded)
+        response.end(result);
+    } else {
+      response.end(data);
+    }
   }
 
   _onWebSocketConnection(ws) {

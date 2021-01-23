@@ -1,1 +1,0 @@
-Files in this folder are used both in Node and injected environments, they can't have dependencies.

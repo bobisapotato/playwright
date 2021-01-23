@@ -48,6 +48,11 @@ if [[ ("$1" == "firefox") || ("$1" == "firefox/") || ("$1" == "ff") ]]; then
   EXPORT_PATH="$PWD/firefox"
   BUILD_NUMBER_UPSTREAM_URL="https://raw.githubusercontent.com/microsoft/playwright/master/browser_patches/firefox/BUILD_NUMBER"
   source "./firefox/UPSTREAM_CONFIG.sh"
+  if [[ ! -z "${FF_CHECKOUT_PATH}" ]]; then
+    echo "WARNING: using checkout path from FF_CHECKOUT_PATH env: ${FF_CHECKOUT_PATH}"
+    CHECKOUT_PATH="${FF_CHECKOUT_PATH}"
+    FRIENDLY_CHECKOUT_PATH="<FF_CHECKOUT_PATH>"
+  fi
 elif [[ ("$1" == "webkit") || ("$1" == "webkit/") || ("$1" == "wk") ]]; then
   FRIENDLY_CHECKOUT_PATH="//browser_patches/webkit/checkout";
   CHECKOUT_PATH="$PWD/webkit/checkout"
@@ -56,6 +61,11 @@ elif [[ ("$1" == "webkit") || ("$1" == "webkit/") || ("$1" == "wk") ]]; then
   EXPORT_PATH="$PWD/webkit"
   BUILD_NUMBER_UPSTREAM_URL="https://raw.githubusercontent.com/microsoft/playwright/master/browser_patches/webkit/BUILD_NUMBER"
   source "./webkit/UPSTREAM_CONFIG.sh"
+  if [[ ! -z "${WK_CHECKOUT_PATH}" ]]; then
+    echo "WARNING: using checkout path from WK_CHECKOUT_PATH env: ${WK_CHECKOUT_PATH}"
+    CHECKOUT_PATH="${WK_CHECKOUT_PATH}"
+    FRIENDLY_CHECKOUT_PATH="<WK_CHECKOUT_PATH>"
+  fi
 else
   echo ERROR: unknown browser to export - "$1"
   exit 1
@@ -119,7 +129,7 @@ NEW_BASE_REVISION=$(git merge-base $REMOTE_BROWSER_UPSTREAM/$BASE_BRANCH $CURREN
 NEW_DIFF=$(git diff --diff-algorithm=myers --full-index $NEW_BASE_REVISION $CURRENT_BRANCH -- . ":!${EXTRA_FOLDER_CHECKOUT_RELPATH}")
 
 # Increment BUILD_NUMBER
-BUILD_NUMBER=$(curl ${BUILD_NUMBER_UPSTREAM_URL})
+BUILD_NUMBER=$(curl ${BUILD_NUMBER_UPSTREAM_URL} | head -1)
 BUILD_NUMBER=$((BUILD_NUMBER+1))
 
 echo "REMOTE_URL=\"$REMOTE_URL\"
@@ -127,6 +137,7 @@ BASE_BRANCH=\"$BASE_BRANCH\"
 BASE_REVISION=\"$NEW_BASE_REVISION\"" > $EXPORT_PATH/UPSTREAM_CONFIG.sh
 echo "$NEW_DIFF" > $EXPORT_PATH/patches/$PATCH_NAME
 echo $BUILD_NUMBER > $EXPORT_PATH/BUILD_NUMBER
+echo "Changed: $(git config user.email) $(date)" >> $EXPORT_PATH/BUILD_NUMBER
 
 echo "-- exporting standalone folder"
 rm -rf "${EXTRA_FOLDER_PW_PATH}"

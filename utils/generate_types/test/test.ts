@@ -26,7 +26,7 @@ type AssertNotAny<S> = {notRealProperty: number} extends S ? false : true;
   await page.goto('https://example.com');
   await page.screenshot({ path: 'example.png' });
 
-  browser.close();
+  await browser.close();
 })();
 
 (async () => {
@@ -35,7 +35,7 @@ type AssertNotAny<S> = {notRealProperty: number} extends S ? false : true;
   await page.goto('https://news.ycombinator.com', { waitUntil: 'networkidle' });
   await page.pdf({ path: 'hn.pdf', format: 'A4' });
 
-  browser.close();
+  await browser.close();
 })();
 
 (async () => {
@@ -54,7 +54,7 @@ type AssertNotAny<S> = {notRealProperty: number} extends S ? false : true;
 
   console.log('Dimensions:', dimensions);
 
-  browser.close();
+  await browser.close();
 })();
 
 // The following examples are taken from the docs itself
@@ -63,7 +63,7 @@ playwright.chromium.launch().then(async browser => {
   page.on('console', message => {
     console.log(message.text());
   });
-  page.evaluate(() => console.log(5, 'hello', { foo: 'bar' }));
+  await page.evaluate(() => console.log(5, 'hello', { foo: 'bar' }));
 
   {
     const result = await page.evaluate(() => {
@@ -105,7 +105,7 @@ playwright.chromium.launch().then(async browser => {
     const myHash = await (window as any).md5(myString);
     console.log(`md5 of ${myString} is ${myHash}`);
   });
-  browser.close();
+  await browser.close();
 
   page.on('console', console.log);
   await page.exposeFunction('readfile', async (filePath: string) => {
@@ -121,6 +121,11 @@ playwright.chromium.launch().then(async browser => {
     const content = await (window as any).readfile('/etc/hosts');
     console.log(content);
   });
+
+  await page.exposeBinding('clicked', async (source, handle) => {
+    await handle.asElement()!.textContent();
+    await source.page.goto('http://example.com');
+  }, { handle: true });
 
   await page.emulateMedia({media: 'screen'});
   await page.pdf({ path: 'page.pdf' });
@@ -184,20 +189,23 @@ playwright.chromium.launch().then(async browser => {
   page.on('dialog', async dialog => {
     console.log(dialog.message());
     await dialog.dismiss();
-    browser.close();
+    await browser.close();
   });
 
   const inputElement = (await page.$('input[type=submit]'))!;
   await inputElement.click();
+
+  await inputElement.setInputFiles([{
+    name: 'yo',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('yo')
+  }])
 });
 
 // Example with launch options
 (async () => {
   const browser = await playwright.chromium.launch({
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-    ],
+    chromiumSandbox: false,
     handleSIGINT: true,
     handleSIGHUP: true,
     handleSIGTERM: true,
@@ -206,7 +214,7 @@ playwright.chromium.launch().then(async browser => {
   await page.goto('https://example.com');
   await page.screenshot({ path: 'example.png' });
 
-  browser.close();
+  await browser.close();
 })();
 
 // Test v0.12 features
@@ -307,7 +315,7 @@ playwright.chromium.launch().then(async browser => {
   console.log(await resultHandle.jsonValue());
   await resultHandle.dispose();
 
-  browser.close();
+  await browser.close();
 })();
 
 // test $eval and $$eval
@@ -376,7 +384,7 @@ playwright.chromium.launch().then(async browser => {
       const assertion: AssertType<string, typeof value> = true;
     }
   }
-  browser.close();
+  await browser.close();
 })();
 
 // waitForEvent
@@ -401,6 +409,10 @@ playwright.chromium.launch().then(async browser => {
       timeout: 500
     });
     const assertion: AssertType<playwright.Page, typeof newPage> = true;
+  }
+  {
+    const response = await page.waitForEvent('response', response => response.url() === 'asdf');
+    const assertion: AssertType<playwright.Response, typeof response> = true;
   }
 })();
 
@@ -715,9 +727,20 @@ playwright.chromium.launch().then(async browser => {
   playwright.chromium.connect;
   playwright.errors.TimeoutError;
   {
-    const iPhone = playwright.devices['iPhone'];
+    playwright.devices['my device'] = {
+      userAgent: 'foo',
+      viewport: {height: 123, width: 456},
+      deviceScaleFactor: 1,
+      hasTouch: false,
+      isMobile: true,
+      defaultBrowserType: 'chromium'
+    };
+    const iPhone = playwright.devices['iPhone 11'];
     const assertion: AssertType<string, typeof iPhone.userAgent> = true;
-    const numberAssertion: AssertType<number, typeof iPhone.viewport.width> = true;
+    const widthAssertion: AssertType<number, typeof iPhone.viewport.width> = true;
+    const deviceScaleFactorAssertion: AssertType<number, typeof iPhone.deviceScaleFactor> = true;
+    const hasTouchAssertion: AssertType<boolean, typeof iPhone.hasTouch> = true;
+    const isMobileAssertion: AssertType<boolean, typeof iPhone.isMobile> = true;
   }
   {
     const agents = playwright.devices.map(x => x.userAgent);
@@ -726,18 +749,12 @@ playwright.chromium.launch().then(async browser => {
 
   // Must be a function that evaluates to a selector engine instance.
   const createTagNameEngine = () => ({
-    // Creates a selector that matches given target when queried at the root.
-    // Can return undefined if unable to create one.
-    create(root: Element, target: Element) {
-      return root.querySelector(target.tagName) === target ? target.tagName : undefined;
-    },
-
-      // Returns the first element matching given selector in the root's subtree.
+    // Returns the first element matching given selector in the root's subtree.
     query(root: Element, selector: string) {
       return root.querySelector(selector);
     },
 
-      // Returns all elements matching given selector in the root's subtree.
+    // Returns all elements matching given selector in the root's subtree.
     queryAll(root: Element, selector: string) {
       return Array.from(root.querySelectorAll(selector));
     }
@@ -749,11 +766,46 @@ playwright.chromium.launch().then(async browser => {
 
 // Event listeners
 (async function() {
-  const eventEmitter = {} as (playwright.Page|playwright.BrowserContext|EventEmitter);
-  const listener = () => {};
-  eventEmitter.addListener('close', listener)
-              .on('close', listener)
-              .once('close', listener)
-              .removeListener('close', listener)
-              .off('close', listener);
+  {
+    const eventEmitter = {} as (playwright.Page | EventEmitter);
+    const listener = () => { };
+    eventEmitter.addListener('close', listener)
+      .on('close', listener)
+      .once('close', listener)
+      .removeListener('close', listener)
+      .off('close', listener);
+
+  }
+  {
+    const eventEmitter = {} as (playwright.BrowserContext | EventEmitter);
+    const listener = (c: playwright.BrowserContext) => { };
+    eventEmitter.addListener('close', listener)
+      .on('close', listener)
+      .once('close', listener)
+      .removeListener('close', listener)
+      .off('close', listener);
+  }
 });
+
+// waitForResponse callback predicate
+(async () => {
+  const browser = await playwright.chromium.launch();
+  const page = await browser.newPage();
+  await Promise.all([
+    page.waitForResponse(response => response.url().includes('example.com')),
+    page.goto('https://example.com')
+  ]);
+
+  await browser.close();
+})();
+
+// exported types
+import {
+  LaunchOptions,
+  ConnectOptions,
+  Cookie,
+  BrowserContextOptions,
+  ViewportSize,
+  Geolocation,
+  HTTPCredentials,
+} from '../../../';

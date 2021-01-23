@@ -10,9 +10,6 @@ on:
       - master
       - release-*
 
-env:
-  CI: true
-
 jobs:
   doc-and-lint:
     name: "docs & lint"
@@ -21,11 +18,22 @@ jobs:
     - uses: actions/checkout@v2
     - uses: actions/setup-node@v1
       with:
-        node-version: 10.15
-    - name: install required packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install libgbm-dev
-        sudo apt-get install xvfb
+        node-version: 10
+    - uses: microsoft/playwright-github-action@v1
     - run: npm ci
+    - run: npm run build
     - run: npm run lint
+
+  build-playwright-driver:
+    name: "build-playwright-driver"
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-node@v1
+      with:
+        node-version: 10
+    - uses: microsoft/playwright-github-action@v1
+    - run: npm ci
+    - run: npm run build
+    - run: node utils/build/update_canary_version.js
+    - run: utils/build/build-playwright-driver.sh

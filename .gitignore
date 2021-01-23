@@ -1,7 +1,6 @@
 /node_modules/
-/test/output-chromium
-/test/output-firefox
-/test/output-webkit
+/test-results/
+/test/coverage-report
 /test/test-user-data-dir*
 .local-browsers/
 /.dev_profile*
@@ -12,8 +11,11 @@
 yarn.lock
 /node6
 /src/generated/*
-/src/chromium/protocol.ts
-/src/firefox/protocol.ts
-/src/webkit/protocol.ts
 lib/
-/types/*
+jest-report.json
+drivers/
+.android-sdk/
+.gradle/
+nohup.out
+api.json
+.trace

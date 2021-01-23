@@ -2,8 +2,6 @@ Releasing is a 3-step process.
 
 # 1. Create a release branch
 
-1. Bump a version to the new `-post` version and land a `chore: cut vX.Y.Z-post version` commit
-  - `./utils/update_version.js vX.Y.Z-post`
 1. On your local machine, create a new branch `release-X.Y` based off the "cutting" commit and land a `chore: mark vX.Y.Z` in the local branch:
   - `git checkout master`
   - `git checkout -b release-X.Y`
@@ -15,7 +13,7 @@ Releasing is a 3-step process.
 
 Once release branch is pushed, it's last commit will be picked up by our CI/CD:
 - make sure commit passes all the bots. If there are any failures, carefully inspect failures to see if these are flakes.
-- the [`publish_canary`](../../.github/workflows/publish_canary.yml) workflow will publish a `@next` version for the commit - this will be our **release candidate**. Go manually to it's page on NPM   to see what it looks like. Try installing locally.
+- the [`publish_canary`](../../.github/workflows/publish_canary_npm.yml) workflow will publish a `@next` version for the commit - this will be our **release candidate**. Go manually to it's page on NPM   to see what it looks like. Try installing locally.
 
 # 2. Prepare release notes
 
@@ -32,3 +30,7 @@ Once release branch is pushed, it's last commit will be picked up by our CI/CD:
 
 Once release is published, the [`publish_release`](../../.github/workflows/publish_release.yml) will kick in and publish package version on NPM.
 
+# 4. Bump version on trunk to next
+
+1. Bump a version to the new `-next` version and land a `chore: cut vX.Y.Z-post version` commit on trunk
+  - `./utils/update_version.js vX.Y.Z-next`

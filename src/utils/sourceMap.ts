@@ -17,7 +17,7 @@
 import * as fs from 'fs';
 import * as util from 'util';
 import { getCallerFilePath } from './stackTrace';
-import { helper } from '../helper';
+import { isDebugMode } from './utils';
 
 type Position = {
   line: number;
@@ -28,23 +28,19 @@ let sourceUrlCounter = 0;
 const playwrightSourceUrlPrefix = '__playwright_evaluation_script__';
 const sourceUrlRegex = /^[\040\t]*\/\/[@#] sourceURL=\s*(\S*?)\s*$/m;
 
-export function isPlaywrightSourceUrl(s: string): boolean {
-  return s.startsWith(playwrightSourceUrlPrefix);
-}
-
 export function ensureSourceUrl(expression: string): string {
   return sourceUrlRegex.test(expression) ? expression : expression + generateSourceUrl();
 }
 
 export async function generateSourceMapUrl(functionText: string, generatedText: string): Promise<string> {
-  if (!helper.isDebugMode())
-    return generateSourceUrl();
+  if (!isDebugMode())
+    return '';
   const sourceMapUrl = await innerGenerateSourceMapUrl(functionText, generatedText);
   return sourceMapUrl || generateSourceUrl();
 }
 
 export function generateSourceUrl(): string {
-  return `\n//# sourceURL=${playwrightSourceUrlPrefix}${sourceUrlCounter++}\n`;
+  return isDebugMode() ? `\n//# sourceURL=${playwrightSourceUrlPrefix}${sourceUrlCounter++}\n` : '';
 }
 
 async function innerGenerateSourceMapUrl(functionText: string, generatedText: string): Promise<string | undefined> {
@@ -133,7 +129,7 @@ function findPosition(source: string, offset: number): Position {
   return result;
 }
 
-function advancePosition(position: Position, delta: Position) {
+function advancePosition(position: Position, delta: Position): Position {
   return {
     line: position.line + delta.line,
     column: delta.column + (delta.line ? 0 : position.column),

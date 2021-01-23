@@ -1,14 +1,20 @@
 # Setting Up Build Bots
 
-We currently have 4 build bots that produce the following builds
-- **[buildbot-linux]** Ubuntu 18.04 machine
-    - builds: `webkit-gtk`, `webkit-wpe`, `firefox-linux`
-- **[buildbot-mac-10.14]** Mac 10.14 machine
-    - builds: `webKit-mac-10.14`, `firefox-mac`
-- **[buildbot-mac-10.15]** machine
-    - builds: `webkit-mac-10.15`
-- **[buildbot-windows]** Windows 10 machine
-    - builds: `firefox-win32`, `firefox-win64`, `webkit-win64`
+We currently have 5 build bots that produce 9 browser builds:
+- **`buildbot-ubuntu-18.04`**
+    - `firefox-ubuntu-18.04.zip`
+    - `webkit-ubuntu-18.04.zip`
+- **`buildbot-ubuntu-20.04`**
+    - `webkit-ubuntu-20.04.zip`
+- **`buildbot-mac-10.14`**
+    - `firefox-mac-10.14.zip`
+    - `webkit-mac-10.14.zip`
+- **`buildbot-mac-10.15`**
+    - `webkit-mac-10.15.zip`
+- **`buildbot-windows`**
+    - `firefox-win32.zip`
+    - `firefox-win64.zip`
+    - `webkit-win64.zip`
 
 This document describes setting up bots infrastructure to produce
 browser builds.
@@ -42,6 +48,15 @@ We currently use MINGW environment that comes with Firefox to run our buildbot i
 Browser toolchains:
 - Firefox: Follow instructions on [Building Firefox for Windows](https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Build_Instructions/Windows_Prerequisites). Get the checkout with mercurial and run "./mach bootstrap" from mercurial root.
 - WebKit: mostly follow instructions on [Building WebKit For Windows](https://trac.webkit.org/wiki/BuildingCairoOnWindows). Use chocolatey to install dependencies; we don't use clang to compile webkit on windows. (**NOTE**: we didn't need to install pywin32 with pip and just skipped that step).
+- Our WebKit port requires libvpx. Install [vcpkg](https://github.com/Microsoft/vcpkg) and build libvpx from source. Run the following commands in Windows Terminal as Administrator(required for bootstrap-vcpkg.bat).
+```bash
+cd c:\
+git clone https://github.com/microsoft/vcpkg.git
+cd vcpkg
+.\bootstrap-vcpkg.bat
+.\vcpkg.exe install libvpx --triplet x64-windows
+```
+ If you install vcpkg in a different location, cmake files should be pointed to the new location (see `-DLIBVPX_PACKAGE_PATH` parameter in [`buildwin.bat`](https://github.com/microsoft/playwright/blob/master/browser_patches/webkit/buildwin.bat)).
 
 After this step, you should:
 - have `c:\mozilla-build` folder and `c:\mozilla-source` folder with firefox checkout.
@@ -104,19 +119,6 @@ The `core.longpaths` is needed for webkit since it has some very long layout pat
 ### 6. Checkout Playwright to /c/
 
 Run `c:\mozilla-build\start-shell.bat` and checkout Playwright repo to `/c/playwright`.
-
-### 7. Create a c:\WEBKIT_WIN64_LIBS\ directory with win64 dlls
-
-
-Create a new `c:\WEBKIT_WIN64_LIBS` folder and copy the following libraries from `C:\Windows\System32` into it:
-- `msvcp140.dll`
-- `msvcp140_2.dll`
-- `vcruntime140.dll`
-- `vcruntime140_1.dll`
-
-> **NOTE**: these libraries are expected by `//browser_patches/webkit/archive.sh`. 
-
-This is necessary since mingw is a 32-bit application and cannot access the `C:\Windows\System32` folder due to [Windows FileSystem Redirector](https://docs.microsoft.com/en-us/windows/win32/winprog64/file-system-redirector?redirectedfrom=MSDN). ([StackOverflow question](https://stackoverflow.com/questions/18982551/is-mingw-caching-windows-directory-contents)) 
 
 ## Running Build Loop
 
@@ -225,14 +227,16 @@ $ sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-9
 $ sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-9 100
 ```
 
-> **NOTE**: Firefox build config can be checked official Firefox builds, navigating to `about:buildconfig` URL. 
+2. FFMPEG cross-compilation requires Docker. Install docker and add `$USER` to docker for sudo-less docker access
 
-## Setting Bot Environment
+```sh
+$ sudo apt-get install -y docker.io # install docker
+$ sudo usermod -aG docker $USER # add user to docker group
+$ newgrp docker # activate group changes
+```
 
-WebKit on Linux requires a new version of BubbleWrap. Download from https://launchpad.net/ubuntu/+source/bubblewrap/0.3.1-1ubuntu1 and install manually.
+> **NOTE**: Firefox build config can be checked official Firefox builds, navigating to `about:buildconfig` URL.
 
-> TODO: instructions to set up linux bot
-
-## Running Build Loop
-
-> TODO: instructions to set up cron jobs
+To document precisely my steps to bring up bots:
+- [July 22, 2020: Setting up Ubuntu 18.04 buildbot on Azure](https://gist.github.com/aslushnikov/a4a3823b894888546e741899e69a1d8e)
+- [July 22, 2020: Setting up Ubuntu 20.04 buildbot on Azure](https://gist.github.com/aslushnikov/a0bd658b575022e198443f856b5185e7)
