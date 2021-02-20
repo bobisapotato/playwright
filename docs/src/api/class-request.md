@@ -3,10 +3,10 @@
 Whenever the page sends a request for a network resource the following sequence of events are emitted by [Page]:
 * [`event: Page.request`] emitted when the request is issued by the page.
 * [`event: Page.response`] emitted when/if the response status and headers are received for the request.
-* [`event: Page.requestfinished`] emitted when the response body is downloaded and the request is complete.
+* [`event: Page.requestFinished`] emitted when the response body is downloaded and the request is complete.
 
 If request fails at some point, then instead of `'requestfinished'` event (and possibly instead of 'response' event),
-the  [`event: Page.requestfailed`] event is emitted.
+the  [`event: Page.requestFailed`] event is emitted.
 
 :::note
 HTTP Error responses, such as 404 or 503, are still successful responses from HTTP standpoint, so request will complete
@@ -17,8 +17,7 @@ If request gets a 'redirect' response, the request is successfully finished with
 request is  issued to a redirected url.
 
 ## method: Request.failure
-- returns: <[null]|[Object]>
-  - `errorText` <[string]> Human-readable error message, e.g. `'net::ERR_FAILED'`.
+- returns: <[null]|[string]>
 
 The method returns `null` unless this request has failed, as reported by `requestfailed` event.
 
@@ -65,6 +64,7 @@ Request's post body, if any.
 Request's post body in a binary form, if any.
 
 ## method: Request.postDataJSON
+* langs: js, python
 - returns: <[null]|[any]>
 
 Returns parsed request's body for `form-urlencoded` and JSON as a fallback if any.

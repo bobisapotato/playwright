@@ -15,20 +15,19 @@
  * limitations under the License.
  */
 
-import { EventEmitter } from 'events';
 import { TimeoutSettings } from '../utils/timeoutSettings';
 import { mkdirIfNeeded } from '../utils/utils';
 import { Browser, BrowserOptions } from './browser';
-import * as dom from './dom';
 import { Download } from './download';
 import * as frames from './frames';
 import { helper } from './helper';
 import * as network from './network';
 import { Page, PageBinding, PageDelegate } from './page';
-import { Progress, ProgressController, ProgressResult } from './progress';
+import { Progress } from './progress';
 import { Selectors, serverSelectors } from './selectors';
 import * as types from './types';
-import * as path from 'path';
+import path from 'path';
+import { CallMetadata, internalCallMetadata, SdkObject } from './instrumentation';
 
 export class Video {
   readonly _videoId: string;
@@ -58,41 +57,12 @@ export class Video {
   }
 }
 
-export type ActionMetadata = {
-  type: 'click' | 'fill' | 'dblclick' | 'hover' | 'selectOption' | 'setInputFiles' | 'type' | 'press' | 'check' | 'uncheck' | 'goto' | 'setContent' | 'goBack' | 'goForward' | 'reload' | 'tap',
-  page: Page,
-  target?: dom.ElementHandle | string,
-  value?: string,
-  stack?: string,
-};
-
-export interface ActionListener {
-  onAfterAction(result: ProgressResult, metadata: ActionMetadata): Promise<void>;
-}
-
-export async function runAction<T>(task: (controller: ProgressController) => Promise<T>, metadata: ActionMetadata): Promise<T> {
-  const controller = new ProgressController();
-  controller.setListener(async result => {
-    for (const listener of metadata.page._browserContext._actionListeners)
-      await listener.onAfterAction(result, metadata);
-  });
-  const result = await task(controller);
-  return result;
-}
-
-export interface ContextListener {
-  onContextCreated(context: BrowserContext): Promise<void>;
-  onContextWillDestroy(context: BrowserContext): Promise<void>;
-  onContextDidDestroy(context: BrowserContext): Promise<void>;
-}
-
-export const contextListeners = new Set<ContextListener>();
-
-export abstract class BrowserContext extends EventEmitter {
+export abstract class BrowserContext extends SdkObject {
   static Events = {
     Close: 'close',
     Page: 'page',
     VideoStarted: 'videostarted',
+    BeforeClose: 'beforeclose',
   };
 
   readonly _timeoutSettings = new TimeoutSettings();
@@ -108,11 +78,11 @@ export abstract class BrowserContext extends EventEmitter {
   readonly _browser: Browser;
   readonly _browserContextId: string | undefined;
   private _selectors?: Selectors;
-  readonly _actionListeners = new Set<ActionListener>();
   private _origins = new Set<string>();
 
   constructor(browser: Browser, options: types.BrowserContextOptions, browserContextId: string | undefined) {
-    super();
+    super(browser);
+    this.attribution.context = this;
     this._browser = browser;
     this._options = options;
     this._browserContextId = browserContextId;
@@ -124,13 +94,12 @@ export abstract class BrowserContext extends EventEmitter {
     this._selectors = selectors;
   }
 
-  selectors() {
+  selectors(): Selectors {
     return this._selectors || serverSelectors;
   }
 
   async _initialize() {
-    for (const listener of contextListeners)
-      await listener.onContextCreated(this);
+    await this.instrumentation.onContextCreated(this);
   }
 
   async _ensureVideosPath() {
@@ -193,7 +162,7 @@ export abstract class BrowserContext extends EventEmitter {
     }
     const binding = new PageBinding(name, playwrightBinding, needsHandle, 'main');
     this._pageBindings.set(identifier, binding);
-    this._doExposeBinding(binding);
+    await this._doExposeBinding(binding);
   }
 
   async grantPermissions(permissions: string[], origin?: string) {
@@ -235,20 +204,18 @@ export abstract class BrowserContext extends EventEmitter {
 
   async _loadDefaultContext(progress: Progress) {
     const pages = await this._loadDefaultContextAsIs(progress);
-    if (pages.length !== 1 || pages[0].mainFrame().url() !== 'about:blank')
-      throw new Error(`Arguments can not specify page to be opened (first url is ${pages[0].mainFrame().url()})`);
     if (this._options.isMobile || this._options.locale) {
       // Workaround for:
       // - chromium fails to change isMobile for existing page;
       // - webkit fails to change locale for existing page.
       const oldPage = pages[0];
-      await this.newPage();
-      await oldPage.close();
+      await this.newPage(progress.metadata);
+      await oldPage.close(progress.metadata);
     }
   }
 
   protected _authenticateProxyViaHeader() {
-    const proxy = this._options.proxy || this._browser._options.proxy || { username: undefined, password: undefined };
+    const proxy = this._options.proxy || this._browser.options.proxy || { username: undefined, password: undefined };
     const { username, password } = proxy;
     if (username) {
       this._options.httpCredentials = { username, password: password! };
@@ -261,7 +228,7 @@ export abstract class BrowserContext extends EventEmitter {
   }
 
   protected _authenticateProxyViaCredentials() {
-    const proxy = this._options.proxy || this._browser._options.proxy;
+    const proxy = this._options.proxy || this._browser.options.proxy;
     if (!proxy)
       return;
     const { username, password } = proxy;
@@ -278,32 +245,34 @@ export abstract class BrowserContext extends EventEmitter {
     return this._closedStatus !== 'open';
   }
 
-  async close() {
+  async close(metadata: CallMetadata) {
     if (this._closedStatus === 'open') {
+      this.emit(BrowserContext.Events.BeforeClose);
       this._closedStatus = 'closing';
 
-      for (const listener of contextListeners)
-        await listener.onContextWillDestroy(this);
-
-      // Collect videos/downloads that we will await.
-      const promises: Promise<any>[] = [];
-      for (const download of this._downloads)
-        promises.push(download.delete());
-      for (const video of this._browser._idToVideo.values()) {
-        if (video._context === this)
-          promises.push(video._finishedPromise);
-      }
+      await this.instrumentation.onContextWillDestroy(this);
 
       if (this._isPersistentContext) {
         // Close all the pages instead of the context,
         // because we cannot close the default context.
-        await Promise.all(this.pages().map(page => page.close()));
+        await Promise.all(this.pages().map(page => page.close(metadata)));
       } else {
         // Close the context.
         await this._doClose();
       }
 
-      // Wait for the videos/downloads to finish.
+      // Cleanup.
+      const promises: Promise<void>[] = [];
+      for (const video of this._browser._idToVideo.values()) {
+        // Wait for the videos to finish.
+        if (video._context === this)
+          promises.push(video._finishedPromise);
+      }
+      for (const download of this._downloads) {
+        // We delete downloads after context closure
+        // so that browser does not write to the download file anymore.
+        promises.push(download.deleteOnContextClose());
+      }
       await Promise.all(promises);
 
       // Persistent context should also close the browser.
@@ -311,14 +280,13 @@ export abstract class BrowserContext extends EventEmitter {
         await this._browser.close();
 
       // Bookkeeping.
-      for (const listener of contextListeners)
-        await listener.onContextDidDestroy(this);
+      await this.instrumentation.onContextDidDestroy(this);
       this._didCloseInternal();
     }
     await this._closePromise;
   }
 
-  async newPage(): Promise<Page> {
+  async newPage(metadata: CallMetadata): Promise<Page> {
     const pageDelegate = await this.newPageDelegate();
     const pageOrError = await pageDelegate.pageOrError();
     if (pageOrError instanceof Page) {
@@ -333,13 +301,14 @@ export abstract class BrowserContext extends EventEmitter {
     this._origins.add(origin);
   }
 
-  async storageState(): Promise<types.StorageState> {
+  async storageState(metadata: CallMetadata): Promise<types.StorageState> {
     const result: types.StorageState = {
       cookies: (await this.cookies()).filter(c => c.value !== ''),
       origins: []
     };
     if (this._origins.size)  {
-      const page = await this.newPage();
+      const internalMetadata = internalCallMetadata();
+      const page = await this.newPage(internalMetadata);
       await page._setServerRequestInterceptor(handler => {
         handler.fulfill({ body: '<html></html>' }).catch(() => {});
       });
@@ -347,40 +316,41 @@ export abstract class BrowserContext extends EventEmitter {
         const originStorage: types.OriginStorage = { origin, localStorage: [] };
         result.origins.push(originStorage);
         const frame = page.mainFrame();
-        await frame.goto(new ProgressController(), origin);
+        await frame.goto(internalMetadata, origin);
         const storage = await frame._evaluateExpression(`({
           localStorage: Object.keys(localStorage).map(name => ({ name, value: localStorage.getItem(name) })),
         })`, false, undefined, 'utility');
         originStorage.localStorage = storage.localStorage;
       }
-      await page.close();
+      await page.close(internalMetadata);
     }
     return result;
   }
 
-  async setStorageState(state: types.SetStorageState) {
+  async setStorageState(metadata: CallMetadata, state: types.SetStorageState) {
     if (state.cookies)
       await this.addCookies(state.cookies);
     if (state.origins && state.origins.length)  {
-      const page = await this.newPage();
+      const internalMetadata = internalCallMetadata();
+      const page = await this.newPage(internalMetadata);
       await page._setServerRequestInterceptor(handler => {
         handler.fulfill({ body: '<html></html>' }).catch(() => {});
       });
       for (const originState of state.origins) {
         const frame = page.mainFrame();
-        await frame.goto(new ProgressController(), originState.origin);
+        await frame.goto(metadata, originState.origin);
         await frame._evaluateExpression(`
           originState => {
             for (const { name, value } of (originState.localStorage || []))
               localStorage.setItem(name, value);
           }`, true, originState, 'utility');
       }
-      await page.close();
+      await page.close(internalMetadata);
     }
   }
 
   async extendInjectedScript(source: string, arg?: any) {
-    const installInFrame = (frame: frames.Frame) => frame.extendInjectedScript(source, arg).catch(e => {});
+    const installInFrame = (frame: frames.Frame) => frame.extendInjectedScript(source, arg).catch(() => {});
     const installInPage = (page: Page) => {
       page.on(Page.Events.InternalFrameNavigatedToNewDocument, installInFrame);
       return Promise.all(page.frames().map(installInFrame));
@@ -404,6 +374,23 @@ export function validateBrowserContextOptions(options: types.BrowserContextOptio
     throw new Error(`"isMobile" option is not supported with null "viewport"`);
   if (!options.viewport && !options.noDefaultViewport)
     options.viewport = { width: 1280, height: 720 };
+  if (options.recordVideo) {
+    if (!options.recordVideo.size) {
+      if (options.noDefaultViewport) {
+        options.recordVideo.size = { width: 800, height: 600 };
+      } else {
+        const size = options.viewport!;
+        const scale = Math.min(1, 800 / Math.max(size.width, size.height));
+        options.recordVideo.size = {
+          width: Math.floor(size.width * scale),
+          height: Math.floor(size.height * scale)
+        };
+      }
+    }
+    // Make sure both dimensions are odd, this is required for vp8
+    options.recordVideo.size!.width &= ~1;
+    options.recordVideo.size!.height &= ~1;
+  }
   if (options.proxy) {
     if (!browserOptions.proxy)
       throw new Error(`Browser needs to be launched with the global proxy. If all contexts override the proxy, global proxy will be never used and can be any string, for example "launch({ proxy: { server: 'per-context' } })"`);
@@ -438,6 +425,10 @@ export function normalizeProxySettings(proxy: types.ProxySettings): types.ProxyS
   } catch (e) {
     url = new URL('http://' + server);
   }
+  if (url.protocol === 'socks4:' && (proxy.username || proxy.password))
+    throw new Error(`Socks4 proxy protocol does not support authentication`);
+  if (url.protocol === 'socks5:' && (proxy.username || proxy.password))
+    throw new Error(`Browser does not support socks5 proxy authentication`);
   server = url.protocol + '//' + url.host;
   if (bypass)
     bypass = bypass.split(',').map(t => t.trim()).join(',');

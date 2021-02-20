@@ -85,8 +85,8 @@ export interface Page {
    * [page.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-page#pageevaluatepagefunction-arg) returns a
    * non-[Serializable] value, then
    * [page.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-page#pageevaluatepagefunction-arg) resolves
-   * to `undefined`. DevTools Protocol also supports transferring some additional values that are not serializable by `JSON`:
-   * `-0`, `NaN`, `Infinity`, `-Infinity`, and bigint literals.
+   * to `undefined`. Playwright also supports transferring some additional values that are not serializable by `JSON`: `-0`,
+   * `NaN`, `Infinity`, `-Infinity`.
    * 
    * Passing argument to `pageFunction`:
    * 
@@ -116,21 +116,21 @@ export interface Page {
    * 
    * Shortcut for main frame's
    * [frame.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevaluatepagefunction-arg).
-   * @param pageFunction Function to be evaluated in the page context
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   evaluate<R, Arg>(pageFunction: PageFunction<Arg, R>, arg: Arg): Promise<R>;
   evaluate<R>(pageFunction: PageFunction<void, R>, arg?: any): Promise<R>;
 
   /**
-   * Returns the value of the `pageFunction` invocation as in-page object (JSHandle).
+   * Returns the value of the `pageFunction` invocation as a [JSHandle].
    * 
    * The only difference between
    * [page.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-page#pageevaluatepagefunction-arg) and
    * [page.evaluateHandle(pageFunction[, arg])](https://playwright.dev/docs/api/class-page#pageevaluatehandlepagefunction-arg)
    * is that
    * [page.evaluateHandle(pageFunction[, arg])](https://playwright.dev/docs/api/class-page#pageevaluatehandlepagefunction-arg)
-   * returns in-page object (JSHandle).
+   * returns [JSHandle].
    * 
    * If the function passed to the
    * [page.evaluateHandle(pageFunction[, arg])](https://playwright.dev/docs/api/class-page#pageevaluatehandlepagefunction-arg)
@@ -159,8 +159,8 @@ export interface Page {
    * await resultHandle.dispose();
    * ```
    * 
-   * @param pageFunction Function to be evaluated in the page context
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   evaluateHandle<R, Arg>(pageFunction: PageFunction<Arg, R>, arg: Arg): Promise<SmartHandle<R>>;
   evaluateHandle<R>(pageFunction: PageFunction<void, R>, arg?: any): Promise<SmartHandle<R>>;
@@ -204,8 +204,8 @@ export interface Page {
    * Shortcut for main frame's
    * [frame.$eval(selector, pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevalselector-pagefunction-arg).
    * @param selector A selector to query for. See [working with selectors](https://playwright.dev/docs/selectors) for more details.
-   * @param pageFunction Function to be evaluated in browser context
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   $eval<K extends keyof HTMLElementTagNameMap, R, Arg>(selector: K, pageFunction: PageFunctionOn<HTMLElementTagNameMap[K], Arg, R>, arg: Arg): Promise<R>;
   $eval<R, Arg, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(selector: string, pageFunction: PageFunctionOn<E, Arg, R>, arg: Arg): Promise<R>;
@@ -227,8 +227,8 @@ export interface Page {
    * ```
    * 
    * @param selector A selector to query for. See [working with selectors](https://playwright.dev/docs/selectors) for more details.
-   * @param pageFunction Function to be evaluated in browser context
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   $$eval<K extends keyof HTMLElementTagNameMap, R, Arg>(selector: K, pageFunction: PageFunctionOn<HTMLElementTagNameMap[K][], Arg, R>, arg: Arg): Promise<R>;
   $$eval<R, Arg, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(selector: string, pageFunction: PageFunctionOn<E[], Arg, R>, arg: Arg): Promise<R>;
@@ -266,8 +266,8 @@ export interface Page {
    * 
    * Shortcut for main frame's
    * [frame.waitForFunction(pageFunction[, arg, options])](https://playwright.dev/docs/api/class-frame#framewaitforfunctionpagefunction-arg-options).
-   * @param pageFunction Function to be evaluated in browser context
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    * @param options 
    */
   waitForFunction<R, Arg>(pageFunction: PageFunction<Arg, R>, arg: Arg, options?: PageWaitForFunctionOptions): Promise<SmartHandle<R>>;
@@ -411,9 +411,14 @@ export interface Page {
   on(event: 'crash', listener: (page: Page) => void): this;
 
   /**
-   * Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Playwright can respond
-   * to the dialog via [dialog.accept([promptText])](https://playwright.dev/docs/api/class-dialog#dialogacceptprompttext) or
-   * [dialog.dismiss()](https://playwright.dev/docs/api/class-dialog#dialogdismiss) methods.
+   * Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Listener **must**
+   * either [dialog.accept([promptText])](https://playwright.dev/docs/api/class-dialog#dialogacceptprompttext) or
+   * [dialog.dismiss()](https://playwright.dev/docs/api/class-dialog#dialogdismiss) the dialog - otherwise the page will
+   * [freeze](https://developer.mozilla.org/en-US/docs/Web/JavaScript/EventLoop#never_blocking) waiting for the dialog, and
+   * actions like click will never finish.
+   * 
+   * > NOTE: When no [page.on('dialog')](https://playwright.dev/docs/api/class-page#pageondialog) listeners are present, all
+   * dialogs are automatically dismissed.
    */
   on(event: 'dialog', listener: (dialog: Dialog) => void): this;
 
@@ -525,7 +530,7 @@ export interface Page {
   on(event: 'response', listener: (response: Response) => void): this;
 
   /**
-   * Emitted when <[WebSocket]> request is sent.
+   * Emitted when [WebSocket] request is sent.
    */
   on(event: 'websocket', listener: (webSocket: WebSocket) => void): this;
 
@@ -580,9 +585,14 @@ export interface Page {
   once(event: 'crash', listener: (page: Page) => void): this;
 
   /**
-   * Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Playwright can respond
-   * to the dialog via [dialog.accept([promptText])](https://playwright.dev/docs/api/class-dialog#dialogacceptprompttext) or
-   * [dialog.dismiss()](https://playwright.dev/docs/api/class-dialog#dialogdismiss) methods.
+   * Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Listener **must**
+   * either [dialog.accept([promptText])](https://playwright.dev/docs/api/class-dialog#dialogacceptprompttext) or
+   * [dialog.dismiss()](https://playwright.dev/docs/api/class-dialog#dialogdismiss) the dialog - otherwise the page will
+   * [freeze](https://developer.mozilla.org/en-US/docs/Web/JavaScript/EventLoop#never_blocking) waiting for the dialog, and
+   * actions like click will never finish.
+   * 
+   * > NOTE: When no [page.on('dialog')](https://playwright.dev/docs/api/class-page#pageondialog) listeners are present, all
+   * dialogs are automatically dismissed.
    */
   once(event: 'dialog', listener: (dialog: Dialog) => void): this;
 
@@ -694,7 +704,7 @@ export interface Page {
   once(event: 'response', listener: (response: Response) => void): this;
 
   /**
-   * Emitted when <[WebSocket]> request is sent.
+   * Emitted when [WebSocket] request is sent.
    */
   once(event: 'websocket', listener: (webSocket: WebSocket) => void): this;
 
@@ -749,9 +759,14 @@ export interface Page {
   addListener(event: 'crash', listener: (page: Page) => void): this;
 
   /**
-   * Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Playwright can respond
-   * to the dialog via [dialog.accept([promptText])](https://playwright.dev/docs/api/class-dialog#dialogacceptprompttext) or
-   * [dialog.dismiss()](https://playwright.dev/docs/api/class-dialog#dialogdismiss) methods.
+   * Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Listener **must**
+   * either [dialog.accept([promptText])](https://playwright.dev/docs/api/class-dialog#dialogacceptprompttext) or
+   * [dialog.dismiss()](https://playwright.dev/docs/api/class-dialog#dialogdismiss) the dialog - otherwise the page will
+   * [freeze](https://developer.mozilla.org/en-US/docs/Web/JavaScript/EventLoop#never_blocking) waiting for the dialog, and
+   * actions like click will never finish.
+   * 
+   * > NOTE: When no [page.on('dialog')](https://playwright.dev/docs/api/class-page#pageondialog) listeners are present, all
+   * dialogs are automatically dismissed.
    */
   addListener(event: 'dialog', listener: (dialog: Dialog) => void): this;
 
@@ -863,7 +878,7 @@ export interface Page {
   addListener(event: 'response', listener: (response: Response) => void): this;
 
   /**
-   * Emitted when <[WebSocket]> request is sent.
+   * Emitted when [WebSocket] request is sent.
    */
   addListener(event: 'websocket', listener: (webSocket: WebSocket) => void): this;
 
@@ -918,9 +933,14 @@ export interface Page {
   removeListener(event: 'crash', listener: (page: Page) => void): this;
 
   /**
-   * Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Playwright can respond
-   * to the dialog via [dialog.accept([promptText])](https://playwright.dev/docs/api/class-dialog#dialogacceptprompttext) or
-   * [dialog.dismiss()](https://playwright.dev/docs/api/class-dialog#dialogdismiss) methods.
+   * Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Listener **must**
+   * either [dialog.accept([promptText])](https://playwright.dev/docs/api/class-dialog#dialogacceptprompttext) or
+   * [dialog.dismiss()](https://playwright.dev/docs/api/class-dialog#dialogdismiss) the dialog - otherwise the page will
+   * [freeze](https://developer.mozilla.org/en-US/docs/Web/JavaScript/EventLoop#never_blocking) waiting for the dialog, and
+   * actions like click will never finish.
+   * 
+   * > NOTE: When no [page.on('dialog')](https://playwright.dev/docs/api/class-page#pageondialog) listeners are present, all
+   * dialogs are automatically dismissed.
    */
   removeListener(event: 'dialog', listener: (dialog: Dialog) => void): this;
 
@@ -1032,7 +1052,7 @@ export interface Page {
   removeListener(event: 'response', listener: (response: Response) => void): this;
 
   /**
-   * Emitted when <[WebSocket]> request is sent.
+   * Emitted when [WebSocket] request is sent.
    */
   removeListener(event: 'websocket', listener: (webSocket: WebSocket) => void): this;
 
@@ -1087,9 +1107,14 @@ export interface Page {
   off(event: 'crash', listener: (page: Page) => void): this;
 
   /**
-   * Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Playwright can respond
-   * to the dialog via [dialog.accept([promptText])](https://playwright.dev/docs/api/class-dialog#dialogacceptprompttext) or
-   * [dialog.dismiss()](https://playwright.dev/docs/api/class-dialog#dialogdismiss) methods.
+   * Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Listener **must**
+   * either [dialog.accept([promptText])](https://playwright.dev/docs/api/class-dialog#dialogacceptprompttext) or
+   * [dialog.dismiss()](https://playwright.dev/docs/api/class-dialog#dialogdismiss) the dialog - otherwise the page will
+   * [freeze](https://developer.mozilla.org/en-US/docs/Web/JavaScript/EventLoop#never_blocking) waiting for the dialog, and
+   * actions like click will never finish.
+   * 
+   * > NOTE: When no [page.on('dialog')](https://playwright.dev/docs/api/class-page#pageondialog) listeners are present, all
+   * dialogs are automatically dismissed.
    */
   off(event: 'dialog', listener: (dialog: Dialog) => void): this;
 
@@ -1201,7 +1226,7 @@ export interface Page {
   off(event: 'response', listener: (response: Response) => void): this;
 
   /**
-   * Emitted when <[WebSocket]> request is sent.
+   * Emitted when [WebSocket] request is sent.
    */
   off(event: 'websocket', listener: (webSocket: WebSocket) => void): this;
 
@@ -1607,21 +1632,20 @@ export interface Page {
    * // → false
    * ```
    * 
-   * @param params 
+   * @param options 
    */
-  emulateMedia(params: {
-    /**
-     * Changes the CSS media type of the page. The only allowed values are `'screen'`, `'print'` and `null`. Passing `null`
-     * disables CSS media emulation. Omitting `media` or passing `undefined` does not change the emulated value. Optional.
-     */
-    media?: null|"screen"|"print";
-
+  emulateMedia(options?: {
     /**
      * Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. Passing
-     * `null` disables color scheme emulation. Omitting `colorScheme` or passing `undefined` does not change the emulated
-     * value. Optional.
+     * `null` disables color scheme emulation.
      */
     colorScheme?: null|"light"|"dark"|"no-preference";
+
+    /**
+     * Changes the CSS media type of the page. The only allowed values are `'screen'`, `'print'` and `null`. Passing `null`
+     * disables CSS media emulation.
+     */
+    media?: null|"screen"|"print";
   }): Promise<void>;
 
   /**
@@ -1668,9 +1692,10 @@ export interface Page {
 
   /**
    * This method waits for an element matching `selector`, waits for [actionability](https://playwright.dev/docs/actionability) checks, focuses the
-   * element, fills it and triggers an `input` event after filling. If the element matching `selector` is not an `<input>`,
-   * `<textarea>` or `[contenteditable]` element, this method throws an error. Note that you can pass an empty string to
-   * clear the input field.
+   * element, fills it and triggers an `input` event after filling. If the element is inside the `<label>` element that has
+   * associated [control](https://developer.mozilla.org/en-US/docs/Web/API/HTMLLabelElement/control), that control will be
+   * filled instead. If the element to be filled is not an `<input>`, `<textarea>` or `[contenteditable]` element, this
+   * method throws an error. Note that you can pass an empty string to clear the input field.
    * 
    * To send fine-grained keyboard events, use
    * [page.type(selector, text[, options])](https://playwright.dev/docs/api/class-page#pagetypeselector-text-options).
@@ -2012,7 +2037,8 @@ export interface Page {
   }): Promise<boolean>;
 
   /**
-   * Returns whether the element is hidden, the opposite of [visible](https://playwright.dev/docs/actionability#visible).
+   * Returns whether the element is hidden, the opposite of [visible](https://playwright.dev/docs/actionability#visible).  `selector` that does not
+   * match any elements is considered hidden.
    * @param selector A selector to search for element. If there are multiple elements satisfying the selector, the first will be used. See [working with selectors](https://playwright.dev/docs/selectors) for more details.
    * @param options 
    */
@@ -2027,7 +2053,8 @@ export interface Page {
   }): Promise<boolean>;
 
   /**
-   * Returns whether the element is [visible](https://playwright.dev/docs/actionability#visible).
+   * Returns whether the element is [visible](https://playwright.dev/docs/actionability#visible). `selector` that does not match any elements is
+   * considered not visible.
    * @param selector A selector to search for element. If there are multiple elements satisfying the selector, the first will be used. See [working with selectors](https://playwright.dev/docs/selectors) for more details.
    * @param options 
    */
@@ -2056,12 +2083,24 @@ export interface Page {
   opener(): Promise<null|Page>;
 
   /**
+   * Pauses script execution. Playwright will stop executing the script and wait for the user to either press 'Resume' button
+   * in the page overlay or to call `playwright.resume()` in the DevTools console.
+   * 
+   * User can inspect selectors or perform manual steps while paused. Resume will continue running the original script from
+   * the place it was paused.
+   * 
+   * > NOTE: This method requires Playwright to be started in a headed mode, with a falsy `headless` value in the
+   * [browserType.launch([options])](https://playwright.dev/docs/api/class-browsertype#browsertypelaunchoptions).
+   */
+  pause(): Promise<void>;
+
+  /**
    * Returns the PDF buffer.
    * 
    * > NOTE: Generating a pdf is currently only supported in Chromium headless.
    * 
    * `page.pdf()` generates a pdf of the page with `print` css media. To generate a pdf with `screen` media, call
-   * [page.emulateMedia(params)](https://playwright.dev/docs/api/class-page#pageemulatemediaparams) before calling
+   * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#pageemulatemediaoptions) before calling
    * `page.pdf()`:
    * 
    * > NOTE: By default, `page.pdf()` generates a pdf with modified colors for printing. Use the
@@ -2856,9 +2895,14 @@ export interface Page {
   waitForEvent(event: 'crash', optionsOrPredicate?: { predicate?: (page: Page) => boolean, timeout?: number } | ((page: Page) => boolean)): Promise<Page>;
 
   /**
-   * Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Playwright can respond
-   * to the dialog via [dialog.accept([promptText])](https://playwright.dev/docs/api/class-dialog#dialogacceptprompttext) or
-   * [dialog.dismiss()](https://playwright.dev/docs/api/class-dialog#dialogdismiss) methods.
+   * Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Listener **must**
+   * either [dialog.accept([promptText])](https://playwright.dev/docs/api/class-dialog#dialogacceptprompttext) or
+   * [dialog.dismiss()](https://playwright.dev/docs/api/class-dialog#dialogdismiss) the dialog - otherwise the page will
+   * [freeze](https://developer.mozilla.org/en-US/docs/Web/JavaScript/EventLoop#never_blocking) waiting for the dialog, and
+   * actions like click will never finish.
+   * 
+   * > NOTE: When no [page.on('dialog')](https://playwright.dev/docs/api/class-page#pageondialog) listeners are present, all
+   * dialogs are automatically dismissed.
    */
   waitForEvent(event: 'dialog', optionsOrPredicate?: { predicate?: (dialog: Dialog) => boolean, timeout?: number } | ((dialog: Dialog) => boolean)): Promise<Dialog>;
 
@@ -2970,7 +3014,7 @@ export interface Page {
   waitForEvent(event: 'response', optionsOrPredicate?: { predicate?: (response: Response) => boolean, timeout?: number } | ((response: Response) => boolean)): Promise<Response>;
 
   /**
-   * Emitted when <[WebSocket]> request is sent.
+   * Emitted when [WebSocket] request is sent.
    */
   waitForEvent(event: 'websocket', optionsOrPredicate?: { predicate?: (webSocket: WebSocket) => boolean, timeout?: number } | ((webSocket: WebSocket) => boolean)): Promise<WebSocket>;
 
@@ -3178,7 +3222,7 @@ export interface Page {
  */
 export interface Frame {
   /**
-   * Returns the return value of `pageFunction`
+   * Returns the return value of `pageFunction`.
    * 
    * If the function passed to the
    * [frame.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevaluatepagefunction-arg) returns
@@ -3190,8 +3234,8 @@ export interface Frame {
    * [frame.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevaluatepagefunction-arg) returns
    * a non-[Serializable] value, then
    * [frame.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevaluatepagefunction-arg) returns
-   * `undefined`. DevTools Protocol also supports transferring some additional values that are not serializable by `JSON`:
-   * `-0`, `NaN`, `Infinity`, `-Infinity`, and bigint literals.
+   * `undefined`. Playwright also supports transferring some additional values that are not serializable by `JSON`: `-0`,
+   * `NaN`, `Infinity`, `-Infinity`.
    * 
    * ```js
    * const result = await frame.evaluate(([x, y]) => {
@@ -3215,19 +3259,19 @@ export interface Frame {
    * await bodyHandle.dispose();
    * ```
    * 
-   * @param pageFunction Function to be evaluated in browser context
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   evaluate<R, Arg>(pageFunction: PageFunction<Arg, R>, arg: Arg): Promise<R>;
   evaluate<R>(pageFunction: PageFunction<void, R>, arg?: any): Promise<R>;
 
   /**
-   * Returns the return value of `pageFunction` as in-page object (JSHandle).
+   * Returns the return value of `pageFunction` as a [JSHandle].
    * 
    * The only difference between
    * [frame.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevaluatepagefunction-arg) and
    * [frame.evaluateHandle(pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevaluatehandlepagefunction-arg)
-   * is that [method: Frame.evaluateHandle`] returns in-page object (JSHandle).
+   * is that [method: Frame.evaluateHandle`] returns [JSHandle].
    * 
    * If the function, passed to the
    * [frame.evaluateHandle(pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevaluatehandlepagefunction-arg),
@@ -3256,8 +3300,8 @@ export interface Frame {
    * await resultHandle.dispose();
    * ```
    * 
-   * @param pageFunction Function to be evaluated in the page context
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   evaluateHandle<R, Arg>(pageFunction: PageFunction<Arg, R>, arg: Arg): Promise<SmartHandle<R>>;
   evaluateHandle<R>(pageFunction: PageFunction<void, R>, arg?: any): Promise<SmartHandle<R>>;
@@ -3283,13 +3327,15 @@ export interface Frame {
   $$(selector: string): Promise<ElementHandle<SVGElement | HTMLElement>[]>;
 
   /**
-   * Returns the return value of `pageFunction`
+   * Returns the return value of `pageFunction`.
    * 
    * The method finds an element matching the specified selector within the frame and passes it as a first argument to
    * `pageFunction`. See [Working with selectors](https://playwright.dev/docs/selectors) for more details. If no elements match the selector, the
    * method throws an error.
    * 
-   * If `pageFunction` returns a [Promise], then `frame.$eval` would wait for the promise to resolve and return its value.
+   * If `pageFunction` returns a [Promise], then
+   * [frame.$eval(selector, pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevalselector-pagefunction-arg)
+   * would wait for the promise to resolve and return its value.
    * 
    * Examples:
    * 
@@ -3300,8 +3346,8 @@ export interface Frame {
    * ```
    * 
    * @param selector A selector to query for. See [working with selectors](https://playwright.dev/docs/selectors) for more details.
-   * @param pageFunction Function to be evaluated in browser context
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   $eval<K extends keyof HTMLElementTagNameMap, R, Arg>(selector: K, pageFunction: PageFunctionOn<HTMLElementTagNameMap[K], Arg, R>, arg: Arg): Promise<R>;
   $eval<R, Arg, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(selector: string, pageFunction: PageFunctionOn<E, Arg, R>, arg: Arg): Promise<R>;
@@ -3309,12 +3355,14 @@ export interface Frame {
   $eval<R, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(selector: string, pageFunction: PageFunctionOn<E, void, R>, arg?: any): Promise<R>;
 
   /**
-   * Returns the return value of `pageFunction`
+   * Returns the return value of `pageFunction`.
    * 
    * The method finds all elements matching the specified selector within the frame and passes an array of matched elements
    * as a first argument to `pageFunction`. See [Working with selectors](https://playwright.dev/docs/selectors) for more details.
    * 
-   * If `pageFunction` returns a [Promise], then `frame.$$eval` would wait for the promise to resolve and return its value.
+   * If `pageFunction` returns a [Promise], then
+   * [frame.$$eval(selector, pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevalselector-pagefunction-arg)
+   * would wait for the promise to resolve and return its value.
    * 
    * Examples:
    * 
@@ -3323,8 +3371,8 @@ export interface Frame {
    * ```
    * 
    * @param selector A selector to query for. See [working with selectors](https://playwright.dev/docs/selectors) for more details.
-   * @param pageFunction Function to be evaluated in browser context
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   $$eval<K extends keyof HTMLElementTagNameMap, R, Arg>(selector: K, pageFunction: PageFunctionOn<HTMLElementTagNameMap[K][], Arg, R>, arg: Arg): Promise<R>;
   $$eval<R, Arg, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(selector: string, pageFunction: PageFunctionOn<E[], Arg, R>, arg: Arg): Promise<R>;
@@ -3358,8 +3406,8 @@ export interface Frame {
    * await frame.waitForFunction(selector => !!document.querySelector(selector), selector);
    * ```
    * 
-   * @param pageFunction Function to be evaluated in browser context
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    * @param options 
    */
   waitForFunction<R, Arg>(pageFunction: PageFunction<Arg, R>, arg: Arg, options?: PageWaitForFunctionOptions): Promise<SmartHandle<R>>;
@@ -3678,9 +3726,10 @@ export interface Frame {
 
   /**
    * This method waits for an element matching `selector`, waits for [actionability](https://playwright.dev/docs/actionability) checks, focuses the
-   * element, fills it and triggers an `input` event after filling. If the element matching `selector` is not an `<input>`,
-   * `<textarea>` or `[contenteditable]` element, this method throws an error. Note that you can pass an empty string to
-   * clear the input field.
+   * element, fills it and triggers an `input` event after filling. If the element is inside the `<label>` element that has
+   * associated [control](https://developer.mozilla.org/en-US/docs/Web/API/HTMLLabelElement/control), that control will be
+   * filled instead. If the element to be filled is not an `<input>`, `<textarea>` or `[contenteditable]` element, this
+   * method throws an error. Note that you can pass an empty string to clear the input field.
    * 
    * To send fine-grained keyboard events, use
    * [frame.type(selector, text[, options])](https://playwright.dev/docs/api/class-frame#frametypeselector-text-options).
@@ -3945,7 +3994,8 @@ export interface Frame {
   }): Promise<boolean>;
 
   /**
-   * Returns whether the element is hidden, the opposite of [visible](https://playwright.dev/docs/actionability#visible).
+   * Returns whether the element is hidden, the opposite of [visible](https://playwright.dev/docs/actionability#visible).  `selector` that does not
+   * match any elements is considered hidden.
    * @param selector A selector to search for element. If there are multiple elements satisfying the selector, the first will be used. See [working with selectors](https://playwright.dev/docs/selectors) for more details.
    * @param options 
    */
@@ -3960,7 +4010,8 @@ export interface Frame {
   }): Promise<boolean>;
 
   /**
-   * Returns whether the element is [visible](https://playwright.dev/docs/actionability#visible).
+   * Returns whether the element is [visible](https://playwright.dev/docs/actionability#visible). `selector` that does not match any elements is
+   * considered not visible.
    * @param selector A selector to search for element. If there are multiple elements satisfying the selector, the first will be used. See [working with selectors](https://playwright.dev/docs/selectors) for more details.
    * @param options 
    */
@@ -4866,9 +4917,7 @@ export interface BrowserContext {
   newPage(): Promise<Page>;
 
   /**
-   * Returns all open pages in the context. Non visible pages, such as `"background_page"`, will not be listed here. You can
-   * find them using
-   * [chromiumBrowserContext.backgroundPages()](https://playwright.dev/docs/api/class-chromiumbrowsercontext#chromiumbrowsercontextbackgroundpages).
+   * Returns all open pages in the context. 
    */
   pages(): Array<Page>;
 
@@ -5097,30 +5146,43 @@ export interface BrowserContext {
  */
 export interface Worker {
   /**
-   * Returns the return value of `pageFunction`
+   * Returns the return value of `pageFunction`.
    * 
-   * If the function passed to the `worker.evaluate` returns a [Promise], then `worker.evaluate` would wait for the promise
-   * to resolve and return its value.
+   * If the function passed to the
+   * [worker.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-worker#workerevaluatepagefunction-arg)
+   * returns a [Promise], then
+   * [worker.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-worker#workerevaluatepagefunction-arg)
+   * would wait for the promise to resolve and return its value.
    * 
-   * If the function passed to the `worker.evaluate` returns a non-[Serializable] value, then `worker.evaluate` returns
-   * `undefined`. DevTools Protocol also supports transferring some additional values that are not serializable by `JSON`:
-   * `-0`, `NaN`, `Infinity`, `-Infinity`, and bigint literals.
-   * @param pageFunction Function to be evaluated in the worker context
-   * @param arg Optional argument to pass to `pageFunction`
+   * If the function passed to the
+   * [worker.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-worker#workerevaluatepagefunction-arg)
+   * returns a non-[Serializable] value, then
+   * [worker.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-worker#workerevaluatepagefunction-arg)
+   * returns `undefined`. Playwright also supports transferring some  additional values that are not serializable by `JSON`:
+   * `-0`, `NaN`, `Infinity`, `-Infinity`.
+   * @param pageFunction Function to be evaluated in the worker context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   evaluate<R, Arg>(pageFunction: PageFunction<Arg, R>, arg: Arg): Promise<R>;
   evaluate<R>(pageFunction: PageFunction<void, R>, arg?: any): Promise<R>;
 
   /**
-   * Returns the return value of `pageFunction` as in-page object (JSHandle).
+   * Returns the return value of `pageFunction` as a [JSHandle].
    * 
-   * The only difference between `worker.evaluate` and `worker.evaluateHandle` is that `worker.evaluateHandle` returns
-   * in-page object (JSHandle).
+   * The only difference between
+   * [worker.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-worker#workerevaluatepagefunction-arg) and
+   * [worker.evaluateHandle(pageFunction[, arg])](https://playwright.dev/docs/api/class-worker#workerevaluatehandlepagefunction-arg)
+   * is that
+   * [worker.evaluateHandle(pageFunction[, arg])](https://playwright.dev/docs/api/class-worker#workerevaluatehandlepagefunction-arg)
+   * returns [JSHandle].
    * 
-   * If the function passed to the `worker.evaluateHandle` returns a [Promise], then `worker.evaluateHandle` would wait for
-   * the promise to resolve and return its value.
-   * @param pageFunction Function to be evaluated in the page context
-   * @param arg Optional argument to pass to `pageFunction`
+   * If the function passed to the
+   * [worker.evaluateHandle(pageFunction[, arg])](https://playwright.dev/docs/api/class-worker#workerevaluatehandlepagefunction-arg)
+   * returns a [Promise], then
+   * [worker.evaluateHandle(pageFunction[, arg])](https://playwright.dev/docs/api/class-worker#workerevaluatehandlepagefunction-arg)
+   * would wait for the promise to resolve and return its value.
+   * @param pageFunction Function to be evaluated in the worker context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   evaluateHandle<R, Arg>(pageFunction: PageFunction<Arg, R>, arg: Arg): Promise<SmartHandle<R>>;
   evaluateHandle<R>(pageFunction: PageFunction<void, R>, arg?: any): Promise<SmartHandle<R>>;
@@ -5173,7 +5235,7 @@ export interface Worker {
  */
 export interface JSHandle<T = any> {
   /**
-   * Returns the return value of `pageFunction`
+   * Returns the return value of `pageFunction`.
    * 
    * This method passes this handle as the first argument to `pageFunction`.
    * 
@@ -5187,19 +5249,19 @@ export interface JSHandle<T = any> {
    * expect(await tweetHandle.evaluate(node => node.innerText)).toBe('10 retweets');
    * ```
    * 
-   * @param pageFunction Function to be evaluated in browser context
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   evaluate<R, Arg, O extends T = T>(pageFunction: PageFunctionOn<O, Arg, R>, arg: Arg): Promise<R>;
   evaluate<R, O extends T = T>(pageFunction: PageFunctionOn<O, void, R>, arg?: any): Promise<R>;
 
   /**
-   * Returns the return value of `pageFunction` as in-page object (JSHandle).
+   * Returns the return value of `pageFunction` as a [JSHandle].
    * 
    * This method passes this handle as the first argument to `pageFunction`.
    * 
    * The only difference between `jsHandle.evaluate` and `jsHandle.evaluateHandle` is that `jsHandle.evaluateHandle` returns
-   * in-page object (JSHandle).
+   * [JSHandle].
    * 
    * If the function passed to the `jsHandle.evaluateHandle` returns a [Promise], then `jsHandle.evaluateHandle` would wait
    * for the promise to resolve and return its value.
@@ -5207,8 +5269,8 @@ export interface JSHandle<T = any> {
    * See
    * [page.evaluateHandle(pageFunction[, arg])](https://playwright.dev/docs/api/class-page#pageevaluatehandlepagefunction-arg)
    * for more details.
-   * @param pageFunction Function to be evaluated
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   evaluateHandle<R, Arg, O extends T = T>(pageFunction: PageFunctionOn<O, Arg, R>, arg: Arg): Promise<SmartHandle<R>>;
   evaluateHandle<R, O extends T = T>(pageFunction: PageFunctionOn<O, void, R>, arg?: any): Promise<SmartHandle<R>>;
@@ -5295,13 +5357,15 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
   $$(selector: string): Promise<ElementHandle<SVGElement | HTMLElement>[]>;
 
   /**
-   * Returns the return value of `pageFunction`
+   * Returns the return value of `pageFunction`.
    * 
    * The method finds an element matching the specified selector in the `ElementHandle`s subtree and passes it as a first
    * argument to `pageFunction`. See [Working with selectors](https://playwright.dev/docs/selectors) for more details. If no elements match the
    * selector, the method throws an error.
    * 
-   * If `pageFunction` returns a [Promise], then `frame.$eval` would wait for the promise to resolve and return its value.
+   * If `pageFunction` returns a [Promise], then
+   * [elementHandle.$eval(selector, pageFunction[, arg])](https://playwright.dev/docs/api/class-elementhandle#elementhandleevalselector-pagefunction-arg)
+   * would wait for the promise to resolve and return its value.
    * 
    * Examples:
    * 
@@ -5312,8 +5376,8 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
    * ```
    * 
    * @param selector A selector to query for. See [working with selectors](https://playwright.dev/docs/selectors) for more details.
-   * @param pageFunction Function to be evaluated in browser context
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   $eval<K extends keyof HTMLElementTagNameMap, R, Arg>(selector: K, pageFunction: PageFunctionOn<HTMLElementTagNameMap[K], Arg, R>, arg: Arg): Promise<R>;
   $eval<R, Arg, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(selector: string, pageFunction: PageFunctionOn<E, Arg, R>, arg: Arg): Promise<R>;
@@ -5321,12 +5385,14 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
   $eval<R, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(selector: string, pageFunction: PageFunctionOn<E, void, R>, arg?: any): Promise<R>;
 
   /**
-   * Returns the return value of `pageFunction`
+   * Returns the return value of `pageFunction`.
    * 
    * The method finds all elements matching the specified selector in the `ElementHandle`'s subtree and passes an array of
    * matched elements as a first argument to `pageFunction`. See [Working with selectors](https://playwright.dev/docs/selectors) for more details.
    * 
-   * If `pageFunction` returns a [Promise], then `frame.$$eval` would wait for the promise to resolve and return its value.
+   * If `pageFunction` returns a [Promise], then
+   * [elementHandle.$$eval(selector, pageFunction[, arg])](https://playwright.dev/docs/api/class-elementhandle#elementhandleevalselector-pagefunction-arg)
+   * would wait for the promise to resolve and return its value.
    * 
    * Examples:
    * 
@@ -5343,8 +5409,8 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
    * ```
    * 
    * @param selector A selector to query for. See [working with selectors](https://playwright.dev/docs/selectors) for more details.
-   * @param pageFunction Function to be evaluated in browser context
-   * @param arg Optional argument to pass to `pageFunction`
+   * @param pageFunction Function to be evaluated in the page context.
+   * @param arg Optional argument to pass to `pageFunction`.
    */
   $$eval<K extends keyof HTMLElementTagNameMap, R, Arg>(selector: K, pageFunction: PageFunctionOn<HTMLElementTagNameMap[K][], Arg, R>, arg: Arg): Promise<R>;
   $$eval<R, Arg, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(selector: string, pageFunction: PageFunctionOn<E[], Arg, R>, arg: Arg): Promise<R>;
@@ -5630,8 +5696,10 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
 
   /**
    * This method waits for [actionability](https://playwright.dev/docs/actionability) checks, focuses the element, fills it and triggers an `input`
-   * event after filling. If the element is not an `<input>`, `<textarea>` or `[contenteditable]` element, this method throws
-   * an error. Note that you can pass an empty string to clear the input field.
+   * event after filling. If the element is inside the `<label>` element that has associated
+   * [control](https://developer.mozilla.org/en-US/docs/Web/API/HTMLLabelElement/control), that control will be filled
+   * instead. If the element to be filled is not an `<input>`, `<textarea>` or `[contenteditable]` element, this method
+   * throws an error. Note that you can pass an empty string to clear the input field.
    * @param value Value to set for the `<input>`, `<textarea>` or `[contenteditable]` element.
    * @param options 
    */
@@ -6193,6 +6261,39 @@ export interface BrowserType<Browser> {
   connect(params: ConnectOptions): Promise<Browser>;
 
   /**
+   * This methods attaches Playwright to an existing browser instance using the Chrome DevTools Protocol.
+   * 
+   * The default browser context is accessible via
+   * [browser.contexts()](https://playwright.dev/docs/api/class-browser#browsercontexts).
+   * 
+   * > NOTE: Connecting over the Chrome DevTools Protocol is only supported for Chromium-based browsers.
+   * @param params 
+   */
+  connectOverCDP(params: {
+    /**
+     * A CDP websocket endpoint to connect to.
+     */
+    wsEndpoint: string;
+
+    /**
+     * Slows down Playwright operations by the specified amount of milliseconds. Useful so that you can see what is going on.
+     * Defaults to 0.
+     */
+    slowMo?: number;
+
+    /**
+     * Logger sink for Playwright logging. Optional.
+     */
+    logger?: Logger;
+
+    /**
+     * Maximum time in milliseconds to wait for the connection to be established. Defaults to `30000` (30 seconds). Pass `0` to
+     * disable timeout.
+     */
+    timeout?: number;
+  }): Promise<Browser>;
+
+  /**
    * A path where Playwright expects to find a bundled browser executable.
    */
   executablePath(): string;
@@ -6208,20 +6309,19 @@ export interface BrowserType<Browser> {
    * });
    * ```
    * 
-   * > **Chromium-only** Playwright can also be used to control the Chrome browser, but it works best with the version of
-   * Chromium it is bundled with. There is no guarantee it will work with any other version. Use `executablePath` option with
-   * extreme caution.
+   * > **Chromium-only** Playwright can also be used to control the Google Chrome or Microsoft Edge browsers, but it works
+   * best with the version of Chromium it is bundled with. There is no guarantee it will work with any other version. Use
+   * `executablePath` option with extreme caution.
    * >
    * > If Google Chrome (rather than Chromium) is preferred, a
    * [Chrome Canary](https://www.google.com/chrome/browser/canary.html) or
    * [Dev Channel](https://www.chromium.org/getting-involved/dev-channel) build is suggested.
    * >
-   * > In [browserType.launch([options])](https://playwright.dev/docs/api/class-browsertype#browsertypelaunchoptions) above,
-   * any mention of Chromium also applies to Chrome.
-   * >
-   * > See [`this article`](https://www.howtogeek.com/202825/what%E2%80%99s-the-difference-between-chromium-and-chrome/) for
-   * a description of the differences between Chromium and Chrome.
-   * [`This article`](https://chromium.googlesource.com/chromium/src/+/lkgr/docs/chromium_browser_vs_google_chrome.md)
+   * > Stock browsers like Google Chrome and Microsoft Edge are suitable for tests that require proprietary media codecs for
+   * video playback. See
+   * [this article](https://www.howtogeek.com/202825/what%E2%80%99s-the-difference-between-chromium-and-chrome/) for other
+   * differences between Chromium and Chrome.
+   * [This article](https://chromium.googlesource.com/chromium/src/+/lkgr/docs/chromium_browser_vs_google_chrome.md)
    * describes some differences for Linux users.
    * @param options 
    */
@@ -6232,8 +6332,9 @@ export interface BrowserType<Browser> {
    * 
    * Launches browser that uses persistent storage located at `userDataDir` and returns the only context. Closing this
    * context will automatically close the browser.
-   * @param userDataDir Path to a User Data Directory, which stores browser session data like cookies and local storage. More details for [Chromium](https://chromium.googlesource.com/chromium/src/+/master/docs/user_data_dir.md) and
-   * [Firefox](https://developer.mozilla.org/en-US/docs/Mozilla/Command_Line_Options#User_Profile).
+   * @param userDataDir Path to a User Data Directory, which stores browser session data like cookies and local storage. More details for [Chromium](https://chromium.googlesource.com/chromium/src/+/master/docs/user_data_dir.md#introduction) and
+   * [Firefox](https://developer.mozilla.org/en-US/docs/Mozilla/Command_Line_Options#User_Profile). Note that Chromium's user
+   * data directory is the **parent** directory of the "Profile Path" seen at `chrome://version`.
    * @param options 
    */
   launchPersistentContext(userDataDir: string, options?: {
@@ -6260,7 +6361,7 @@ export interface BrowserType<Browser> {
 
     /**
      * Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. See
-     * [page.emulateMedia(params)](https://playwright.dev/docs/api/class-page#pageemulatemediaparams) for more details.
+     * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#pageemulatemediaoptions) for more details.
      * Defaults to '`light`'.
      */
     colorScheme?: "light"|"dark"|"no-preference";
@@ -6354,8 +6455,8 @@ export interface BrowserType<Browser> {
     };
 
     /**
-     * If `true`, then do not use any of the default arguments. If an array is given, then filter out the given default
-     * arguments. Dangerous option; use with care. Defaults to `false`.
+     * If `true`, Playwright does not pass its own configurations args and only uses the ones from `args`. If an array is
+     * given, then filters out the given default arguments. Dangerous option; use with care. Defaults to `false`.
      */
     ignoreDefaultArgs?: boolean|Array<string>;
 
@@ -6454,9 +6555,9 @@ export interface BrowserType<Browser> {
       dir: string;
 
       /**
-       * Optional dimensions of the recorded videos. If not specified the size will be equal to `viewport`. If `viewport` is not
-       * configured explicitly the video size defaults to 1280x720. Actual picture of each page will be scaled down if necessary
-       * to fit the specified size.
+       * Optional dimensions of the recorded videos. If not specified the size will be equal to `viewport` scaled down to fit
+       * into 800x800. If `viewport` is not configured explicitly the video size defaults to 800x450. Actual picture of each page
+       * will be scaled down if necessary to fit the specified size.
        */
       size?: {
         /**
@@ -6620,8 +6721,8 @@ export interface BrowserType<Browser> {
     headless?: boolean;
 
     /**
-     * If `true`, then do not use any of the default arguments. If an array is given, then filter out the given default
-     * arguments. Dangerous option; use with care. Defaults to `false`.
+     * If `true`, Playwright does not pass its own configurations args and only uses the ones from `args`. If an array is
+     * given, then filters out the given default arguments. Dangerous option; use with care. Defaults to `false`.
      */
     ignoreDefaultArgs?: boolean|Array<string>;
 
@@ -6941,9 +7042,1087 @@ type AccessibilityNode = {
 export const selectors: Selectors;
 export const devices: Devices & DeviceDescriptor[];
 
+/**
+ * Electron application representation. You can use
+ * [electron.launch([options])](https://playwright.dev/docs/api/class-electron#electronlaunchoptions) to obtain the
+ * application instance. This instance you can control main electron process as well as work with Electron windows:
+ * 
+ * ```js
+ * const { _electron: electron } = require('playwright');
+ * 
+ * (async () => {
+ *   // Launch Electron app.
+ *   const electronApp = await electron.launch({ args: ['main.js'] });
+ * 
+ *   // Evaluation expression in the Electron context.
+ *   const appPath = await electronApp.evaluate(async (electron) => {
+ *     // This runs in the main Electron process, |electron| parameter
+ *     // here is always the result of the require('electron') in the main
+ *     // app script.
+ *     return electron.getAppPath();
+ *   });
+ * 
+ *   // Get the first window that the app opens, wait if necessary.
+ *   const window = await electronApp.firstWindow();
+ *   // Print the title.
+ *   console.log(await window.title());
+ *   // Capture a screenshot.
+ *   await window.screenshot({ path: 'intro.png' });
+ *   // Direct Electron console to Node terminal.
+ *   window.on('console', console.log);
+ *   // Click button.
+ *   await window.click('text=Click me');
+ * })();
+ * ```
+ * 
+ */
+export interface ElectronApplication {
+  /**
+   * Returns the return value of `pageFunction`.
+   * 
+   * If the function passed to the
+   * [electronApplication.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-electronapplication#electronapplicationevaluatepagefunction-arg)
+   * returns a [Promise], then
+   * [electronApplication.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-electronapplication#electronapplicationevaluatepagefunction-arg)
+   * would wait for the promise to resolve and return its value.
+   * 
+   * If the function passed to the
+   * [electronApplication.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-electronapplication#electronapplicationevaluatepagefunction-arg)
+   * returns a non-[Serializable] value, then
+   * [electronApplication.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-electronapplication#electronapplicationevaluatepagefunction-arg)
+   * returns `undefined`. Playwright also supports transferring some additional values that are not serializable by `JSON`:
+   * `-0`, `NaN`, `Infinity`, `-Infinity`.
+   * @param pageFunction Function to be evaluated in the worker context.
+   * @param arg Optional argument to pass to `pageFunction`.
+   */
+  evaluate<R, Arg>(pageFunction: PageFunctionOn<typeof import('electron'), Arg, R>, arg: Arg): Promise<R>;
+  evaluate<R>(pageFunction: PageFunctionOn<typeof import('electron'), void, R>, arg?: any): Promise<R>;
+
+  /**
+   * Returns the return value of `pageFunction` as a [JSHandle].
+   * 
+   * The only difference between
+   * [electronApplication.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-electronapplication#electronapplicationevaluatepagefunction-arg)
+   * and
+   * [electronApplication.evaluateHandle(pageFunction, arg)](https://playwright.dev/docs/api/class-electronapplication#electronapplicationevaluatehandlepagefunction-arg)
+   * is that
+   * [electronApplication.evaluateHandle(pageFunction, arg)](https://playwright.dev/docs/api/class-electronapplication#electronapplicationevaluatehandlepagefunction-arg)
+   * returns [JSHandle].
+   * 
+   * If the function passed to the
+   * [electronApplication.evaluateHandle(pageFunction, arg)](https://playwright.dev/docs/api/class-electronapplication#electronapplicationevaluatehandlepagefunction-arg)
+   * returns a [Promise], then
+   * [electronApplication.evaluateHandle(pageFunction, arg)](https://playwright.dev/docs/api/class-electronapplication#electronapplicationevaluatehandlepagefunction-arg)
+   * would wait for the promise to resolve and return its value.
+   * @param pageFunction Function to be evaluated in the worker context.
+   * @param arg 
+   */
+  evaluateHandle<R, Arg>(pageFunction: PageFunctionOn<typeof import('electron'), Arg, R>, arg: Arg): Promise<SmartHandle<R>>;
+  evaluateHandle<R>(pageFunction: PageFunctionOn<typeof import('electron'), void, R>, arg?: any): Promise<SmartHandle<R>>;
+  /**
+   * This event is issued when the application closes.
+   */
+  on(event: 'close', listener: () => void): this;
+
+  /**
+   * This event is issued for every window that is created **and loaded** in Electron. It contains a [Page] that can be used
+   * for Playwright automation.
+   */
+  on(event: 'window', listener: (page: Page) => void): this;
+
+  /**
+   * This event is issued when the application closes.
+   */
+  once(event: 'close', listener: () => void): this;
+
+  /**
+   * This event is issued for every window that is created **and loaded** in Electron. It contains a [Page] that can be used
+   * for Playwright automation.
+   */
+  once(event: 'window', listener: (page: Page) => void): this;
+
+  /**
+   * This event is issued when the application closes.
+   */
+  addListener(event: 'close', listener: () => void): this;
+
+  /**
+   * This event is issued for every window that is created **and loaded** in Electron. It contains a [Page] that can be used
+   * for Playwright automation.
+   */
+  addListener(event: 'window', listener: (page: Page) => void): this;
+
+  /**
+   * This event is issued when the application closes.
+   */
+  removeListener(event: 'close', listener: () => void): this;
+
+  /**
+   * This event is issued for every window that is created **and loaded** in Electron. It contains a [Page] that can be used
+   * for Playwright automation.
+   */
+  removeListener(event: 'window', listener: (page: Page) => void): this;
+
+  /**
+   * This event is issued when the application closes.
+   */
+  off(event: 'close', listener: () => void): this;
+
+  /**
+   * This event is issued for every window that is created **and loaded** in Electron. It contains a [Page] that can be used
+   * for Playwright automation.
+   */
+  off(event: 'window', listener: (page: Page) => void): this;
+
+  /**
+   * Closes Electron application.
+   */
+  close(): Promise<void>;
+
+  /**
+   * This method returns browser context that can be used for setting up context-wide routing, etc.
+   */
+  context(): BrowserContext;
+
+  /**
+   * Convenience method that waits for the first application window to be opened. Typically your script will start with:
+   * 
+   * ```js
+   *   const electronApp = await electron.launch({
+   *     args: ['main.js']
+   *   });
+   *   const window = await electronApp.firstWindow();
+   *   // ...
+   * ```
+   * 
+   */
+  firstWindow(): Promise<Page>;
+
+  /**
+   * This event is issued when the application closes.
+   */
+  waitForEvent(event: 'close', optionsOrPredicate?: { predicate?: () => boolean, timeout?: number } | (() => boolean)): Promise<void>;
+
+  /**
+   * This event is issued for every window that is created **and loaded** in Electron. It contains a [Page] that can be used
+   * for Playwright automation.
+   */
+  waitForEvent(event: 'window', optionsOrPredicate?: { predicate?: (page: Page) => boolean, timeout?: number } | ((page: Page) => boolean)): Promise<Page>;
+
+
+  /**
+   * Convenience method that returns all the opened windows.
+   */
+  windows(): Array<Page>;}
+
+export type AndroidElementInfo = {
+  clazz: string;
+  desc: string;
+  res: string;
+  pkg: string;
+  text: string;
+  bounds: { x: number, y: number, width: number, height: number };
+  checkable: boolean;
+  checked: boolean;
+  clickable: boolean;
+  enabled: boolean;
+  focusable: boolean;
+  focused: boolean;
+  longClickable: boolean;
+  scrollable: boolean;
+  selected: boolean;
+};
+
+export type AndroidSelector = {
+  checkable?: boolean,
+  checked?: boolean,
+  clazz?: string | RegExp,
+  clickable?: boolean,
+  depth?: number,
+  desc?: string | RegExp,
+  enabled?: boolean,
+  focusable?: boolean,
+  focused?: boolean,
+  hasChild?: { selector: AndroidSelector },
+  hasDescendant?: { selector: AndroidSelector, maxDepth?: number },
+  longClickable?: boolean,
+  pkg?: string | RegExp,
+  res?: string | RegExp,
+  scrollable?: boolean,
+  selected?: boolean,
+  text?: string | RegExp,
+};
+
+export type AndroidKey =
+  'Unknown' |
+  'SoftLeft' | 'SoftRight' |
+  'Home' |
+  'Back' |
+  'Call' | 'EndCall' |
+  '0' |  '1' |  '2' |  '3' |  '4' |  '5' |  '6' |  '7' |  '8' |  '9' |
+  'Star' | 'Pound' | '*' | '#' |
+  'DialUp' | 'DialDown' | 'DialLeft' | 'DialRight' | 'DialCenter' |
+  'VolumeUp' | 'VolumeDown' |
+  'Power' |
+  'Camera' |
+  'Clear' |
+  'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K' | 'L' | 'M' |
+  'N' | 'O' | 'P' | 'Q' | 'R' | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 'Y' | 'Z' |
+  'Comma' | ',' |
+  'Period' | '.' |
+  'AltLeft' | 'AltRight' |
+  'ShiftLeft' | 'ShiftRight' |
+  'Tab' | '\t' |
+  'Space' | ' ' |
+  'Sym' |
+  'Explorer' |
+  'Envelop' |
+  'Enter' | '\n' |
+  'Del' |
+  'Grave' |
+  'Minus' | '-' |
+  'Equals' | '=' |
+  'LeftBracket' | '(' |
+  'RightBracket' | ')' |
+  'Backslash' | '\\' |
+  'Semicolon' | ';' |
+  'Apostrophe' | '`' |
+  'Slash' | '/' |
+  'At' | '@' |
+  'Num' |
+  'HeadsetHook' |
+  'Focus' |
+  'Plus' | '+' |
+  'Menu' |
+  'Notification' |
+  'Search' |
+  'RecentApps' |
+  'AppSwitch' |
+  'Assist' |
+  'Cut' |
+  'Copy' |
+  'Paste';
+
 // This is required to not export everything by default. See https://github.com/Microsoft/TypeScript/issues/19545#issuecomment-340490459
 export {};
 
+
+/**
+ * Playwright has **experimental** support for Android automation. You can access android namespace via:
+ * 
+ * ```js
+ * const { _android } = require('playwright');
+ * ```
+ * 
+ * An example of the Android automation script would be:
+ * 
+ * ```js
+ * const { _android } = require('playwright');
+ * 
+ * (async () => {
+ *   // Connect to the device.
+ *   const [device] = await playwright._android.devices();
+ *   console.log(`Model: ${device.model()}`);
+ *   console.log(`Serial: ${device.serial()}`);
+ *   // Take screenshot of the whole device.
+ *   await device.screenshot({ path: 'device.png' });
+ * 
+ *   {
+ *     // --------------------- WebView -----------------------
+ * 
+ *     // Launch an application with WebView.
+ *     await device.shell('am force-stop org.chromium.webview_shell');
+ *     await device.shell('am start org.chromium.webview_shell/.WebViewBrowserActivity');
+ *     // Get the WebView.
+ *     const webview = await device.webView({ pkg: 'org.chromium.webview_shell' });
+ * 
+ *     // Fill the input box.
+ *     await device.fill({ res: 'org.chromium.webview_shell:id/url_field' }, 'github.com/microsoft/playwright');
+ *     await device.press({ res: 'org.chromium.webview_shell:id/url_field' }, 'Enter');
+ * 
+ *     // Work with WebView's page as usual.
+ *     const page = await webview.page();
+ *     await page.page.waitForNavigation({ url: /.*microsoft\/playwright.*\/ });
+ *     console.log(await page.title());
+ *   }
+ * 
+ *   {
+ *     // --------------------- Browser -----------------------
+ * 
+ *     // Launch Chrome browser.
+ *     await device.shell('am force-stop com.android.chrome');
+ *     const context = await device.launchBrowser();
+ * 
+ *     // Use BrowserContext as usual.
+ *     const page = await context.newPage();
+ *     await page.goto('https://webkit.org/');
+ *     console.log(await page.evaluate(() => window.location.href));
+ *     await page.screenshot({ path: 'page.png' });
+ * 
+ *     await context.close();
+ *   }
+ * 
+ *   // Close the device.
+ *   await device.close();
+ * })();
+ * ```
+ * 
+ * Note that since you don't need Playwright to install web browsers when testing Android, you can omit browser download
+ * via setting the following environment variable when installing Playwright:
+ * 
+ * ```sh js
+ * $ PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i -D playwright
+ * ```
+ * 
+ */
+export interface Android {
+  /**
+   * Returns the list of detected Android devices.
+   */
+  devices(): Promise<Array<AndroidDevice>>;
+
+  /**
+   * This setting will change the default maximum time for all the methods accepting `timeout` option.
+   * @param timeout Maximum time in milliseconds
+   */
+  setDefaultTimeout(timeout: number): void;
+}
+
+/**
+ * [AndroidDevice] represents a connected device, either real hardware or emulated. Devices can be obtained using
+ * [android.devices()](https://playwright.dev/docs/api/class-android#androiddevices).
+ */
+export interface AndroidDevice {
+  /**
+   * Emitted when a new WebView instance is detected.
+   */
+  on(event: 'webview', listener: (androidWebView: AndroidWebView) => void): this;
+
+  /**
+   * Emitted when a new WebView instance is detected.
+   */
+  once(event: 'webview', listener: (androidWebView: AndroidWebView) => void): this;
+
+  /**
+   * Emitted when a new WebView instance is detected.
+   */
+  addListener(event: 'webview', listener: (androidWebView: AndroidWebView) => void): this;
+
+  /**
+   * Emitted when a new WebView instance is detected.
+   */
+  removeListener(event: 'webview', listener: (androidWebView: AndroidWebView) => void): this;
+
+  /**
+   * Emitted when a new WebView instance is detected.
+   */
+  off(event: 'webview', listener: (androidWebView: AndroidWebView) => void): this;
+
+  /**
+   * Disconnects from the device.
+   */
+  close(): Promise<void>;
+
+  /**
+   * Drags the widget defined by `selector` towards `dest` point.
+   * @param selector Selector to drag.
+   * @param dest Point to drag to.
+   * @param options 
+   */
+  drag(selector: AndroidSelector, dest: {
+    x: number;
+
+    y: number;
+  }, options?: {
+    /**
+     * Optional speed of the drag in pixels per second.
+     */
+    speed?: number;
+
+    /**
+     * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
+     * using the
+     * [androidDevice.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-androiddevice#androiddevicesetdefaulttimeouttimeout)
+     * method.
+     */
+    timeout?: number;
+  }): Promise<void>;
+
+  /**
+   * Fills the specific `selector` input box with `text`.
+   * @param selector Selector to fill.
+   * @param text Text to be filled in the input box.
+   * @param options 
+   */
+  fill(selector: AndroidSelector, text: string, options?: {
+    /**
+     * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
+     * using the
+     * [androidDevice.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-androiddevice#androiddevicesetdefaulttimeouttimeout)
+     * method.
+     */
+    timeout?: number;
+  }): Promise<void>;
+
+  /**
+   * Flings the widget defined by `selector` in  the specified `direction`.
+   * @param selector Selector to fling.
+   * @param direction Fling direction.
+   * @param options 
+   */
+  fling(selector: AndroidSelector, direction: "down"|"up"|"left"|"right", options?: {
+    /**
+     * Optional speed of the fling in pixels per second.
+     */
+    speed?: number;
+
+    /**
+     * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
+     * using the
+     * [androidDevice.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-androiddevice#androiddevicesetdefaulttimeouttimeout)
+     * method.
+     */
+    timeout?: number;
+  }): Promise<void>;
+
+  /**
+   * Returns information about a widget defined by `selector`.
+   * @param selector Selector to return information about.
+   */
+  info(selector: AndroidSelector): Promise<AndroidElementInfo>;
+
+  input: AndroidInput;
+
+  /**
+   * Installs an apk on the device.
+   * @param file Either a path to the apk file, or apk file content.
+   * @param options 
+   */
+  installApk(file: string|Buffer, options?: {
+    /**
+     * Optional arguments to pass to the `shell:cmd package install` call. Defaults to `-r -t -S`.
+     */
+    args?: Array<string>;
+  }): Promise<void>;
+
+  /**
+   * Launches Chrome browser on the device, and returns its persistent context.
+   * @param options 
+   */
+  launchBrowser(options?: {
+    /**
+     * Whether to automatically download all the attachments. Defaults to `false` where all the downloads are canceled.
+     */
+    acceptDownloads?: boolean;
+
+    /**
+     * Toggles bypassing page's Content-Security-Policy.
+     */
+    bypassCSP?: boolean;
+
+    /**
+     * Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. See
+     * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#pageemulatemediaoptions) for more details.
+     * Defaults to '`light`'.
+     */
+    colorScheme?: "light"|"dark"|"no-preference";
+
+    /**
+     * Optional package name to launch instead of default Chrome for Android.
+     */
+    command?: string;
+
+    /**
+     * Specify device scale factor (can be thought of as dpr). Defaults to `1`.
+     */
+    deviceScaleFactor?: number;
+
+    /**
+     * An object containing additional HTTP headers to be sent with every request. All header values must be strings.
+     */
+    extraHTTPHeaders?: { [key: string]: string; };
+
+    geolocation?: {
+      /**
+       * Latitude between -90 and 90.
+       */
+      latitude: number;
+
+      /**
+       * Longitude between -180 and 180.
+       */
+      longitude: number;
+
+      /**
+       * Non-negative accuracy value. Defaults to `0`.
+       */
+      accuracy?: number;
+    };
+
+    /**
+     * Specifies if viewport supports touch events. Defaults to false.
+     */
+    hasTouch?: boolean;
+
+    /**
+     * Credentials for [HTTP authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication).
+     */
+    httpCredentials?: {
+      username: string;
+
+      password: string;
+    };
+
+    /**
+     * Whether to ignore HTTPS errors during navigation. Defaults to `false`.
+     */
+    ignoreHTTPSErrors?: boolean;
+
+    /**
+     * Whether the `meta viewport` tag is taken into account and touch events are enabled. Defaults to `false`. Not supported
+     * in Firefox.
+     */
+    isMobile?: boolean;
+
+    /**
+     * Whether or not to enable JavaScript in the context. Defaults to `true`.
+     */
+    javaScriptEnabled?: boolean;
+
+    /**
+     * Specify user locale, for example `en-GB`, `de-DE`, etc. Locale will affect `navigator.language` value, `Accept-Language`
+     * request header value as well as number and date formatting rules.
+     */
+    locale?: string;
+
+    /**
+     * Logger sink for Playwright logging.
+     */
+    logger?: Logger;
+
+    /**
+     * Whether to emulate network being offline. Defaults to `false`.
+     */
+    offline?: boolean;
+
+    /**
+     * A list of permissions to grant to all pages in this context. See
+     * [browserContext.grantPermissions(permissions[, options])](https://playwright.dev/docs/api/class-browsercontext#browsercontextgrantpermissionspermissions-options)
+     * for more details.
+     */
+    permissions?: Array<string>;
+
+    /**
+     * Enables [HAR](http://www.softwareishard.com/blog/har-12-spec) recording for all pages into `recordHar.path` file. If not
+     * specified, the HAR is not recorded. Make sure to await
+     * [browserContext.close()](https://playwright.dev/docs/api/class-browsercontext#browsercontextclose) for the HAR to be
+     * saved.
+     */
+    recordHar?: {
+      /**
+       * Optional setting to control whether to omit request content from the HAR. Defaults to `false`.
+       */
+      omitContent?: boolean;
+
+      /**
+       * Path on the filesystem to write the HAR file to.
+       */
+      path: string;
+    };
+
+    /**
+     * Enables video recording for all pages into `recordVideo.dir` directory. If not specified videos are not recorded. Make
+     * sure to await [browserContext.close()](https://playwright.dev/docs/api/class-browsercontext#browsercontextclose) for
+     * videos to be saved.
+     */
+    recordVideo?: {
+      /**
+       * Path to the directory to put videos into.
+       */
+      dir: string;
+
+      /**
+       * Optional dimensions of the recorded videos. If not specified the size will be equal to `viewport` scaled down to fit
+       * into 800x800. If `viewport` is not configured explicitly the video size defaults to 800x450. Actual picture of each page
+       * will be scaled down if necessary to fit the specified size.
+       */
+      size?: {
+        /**
+         * Video frame width.
+         */
+        width: number;
+
+        /**
+         * Video frame height.
+         */
+        height: number;
+      };
+    };
+
+    /**
+     * Changes the timezone of the context. See
+     * [ICU's metaZones.txt](https://cs.chromium.org/chromium/src/third_party/icu/source/data/misc/metaZones.txt?rcl=faee8bc70570192d82d2978a71e2a615788597d1)
+     * for a list of supported timezone IDs.
+     */
+    timezoneId?: string;
+
+    /**
+     * Specific user agent to use in this context.
+     */
+    userAgent?: string;
+
+    /**
+     * **DEPRECATED** Use `recordVideo` instead.
+     * @deprecated
+     */
+    videoSize?: {
+      /**
+       * Video frame width.
+       */
+      width: number;
+
+      /**
+       * Video frame height.
+       */
+      height: number;
+    };
+
+    /**
+     * **DEPRECATED** Use `recordVideo` instead.
+     * @deprecated
+     */
+    videosPath?: string;
+
+    /**
+     * Sets a consistent viewport for each page. Defaults to an 1280x720 viewport. `null` disables the default viewport.
+     */
+    viewport?: null|{
+      /**
+       * page width in pixels.
+       */
+      width: number;
+
+      /**
+       * page height in pixels.
+       */
+      height: number;
+    };
+  }): Promise<ChromiumBrowserContext>;
+
+  /**
+   * Performs a long tap on the widget defined by `selector`.
+   * @param selector Selector to tap on.
+   * @param options 
+   */
+  longTap(selector: AndroidSelector, options?: {
+    /**
+     * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
+     * using the
+     * [androidDevice.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-androiddevice#androiddevicesetdefaulttimeouttimeout)
+     * method.
+     */
+    timeout?: number;
+  }): Promise<void>;
+
+  /**
+   * Device model.
+   */
+  model(): string;
+
+  /**
+   * Launches a process in the shell on the device and returns a socket to communicate with the launched process.
+   * @param command 
+   */
+  open(command: string): Promise<AndroidSocket>;
+
+  /**
+   * Pinches the widget defined by `selector` in the closing direction.
+   * @param selector Selector to pinch close.
+   * @param percent The size of the pinch as a percentage of the widget's size.
+   * @param options 
+   */
+  pinchClose(selector: AndroidSelector, percent: number, options?: {
+    /**
+     * Optional speed of the pinch in pixels per second.
+     */
+    speed?: number;
+
+    /**
+     * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
+     * using the
+     * [androidDevice.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-androiddevice#androiddevicesetdefaulttimeouttimeout)
+     * method.
+     */
+    timeout?: number;
+  }): Promise<void>;
+
+  /**
+   * Pinches the widget defined by `selector` in the open direction.
+   * @param selector Selector to pinch open.
+   * @param percent The size of the pinch as a percentage of the widget's size.
+   * @param options 
+   */
+  pinchOpen(selector: AndroidSelector, percent: number, options?: {
+    /**
+     * Optional speed of the pinch in pixels per second.
+     */
+    speed?: number;
+
+    /**
+     * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
+     * using the
+     * [androidDevice.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-androiddevice#androiddevicesetdefaulttimeouttimeout)
+     * method.
+     */
+    timeout?: number;
+  }): Promise<void>;
+
+  /**
+   * Presses the specific `key` in the widget defined by `selector`.
+   * @param selector Selector to press the key in.
+   * @param key The key to press.
+   * @param options 
+   */
+  press(selector: AndroidSelector, key: AndroidKey, options?: {
+    /**
+     * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
+     * using the
+     * [androidDevice.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-androiddevice#androiddevicesetdefaulttimeouttimeout)
+     * method.
+     */
+    timeout?: number;
+  }): Promise<void>;
+
+  /**
+   * Copies a file to the device.
+   * @param file Either a path to the file, or file content.
+   * @param path Path to the file on the device.
+   * @param options 
+   */
+  push(file: string|Buffer, path: string, options?: {
+    /**
+     * Optional file mode, defaults to `644` (`rw-r--r--`).
+     */
+    mode?: number;
+  }): Promise<void>;
+
+  /**
+   * Returns the buffer with the captured screenshot of the device.
+   * @param options 
+   */
+  screenshot(options?: {
+    /**
+     * The file path to save the image to. If `path` is a relative path, then it is resolved relative to the current working
+     * directory. If no path is provided, the image won't be saved to the disk.
+     */
+    path?: string;
+  }): Promise<Buffer>;
+
+  /**
+   * Scrolls the widget defined by `selector` in  the specified `direction`.
+   * @param selector Selector to scroll.
+   * @param direction Scroll direction.
+   * @param percent Distance to scroll as a percentage of the widget's size.
+   * @param options 
+   */
+  scroll(selector: AndroidSelector, direction: "down"|"up"|"left"|"right", percent: number, options?: {
+    /**
+     * Optional speed of the scroll in pixels per second.
+     */
+    speed?: number;
+
+    /**
+     * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
+     * using the
+     * [androidDevice.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-androiddevice#androiddevicesetdefaulttimeouttimeout)
+     * method.
+     */
+    timeout?: number;
+  }): Promise<void>;
+
+  /**
+   * Device serial number.
+   */
+  serial(): string;
+
+  /**
+   * This setting will change the default maximum time for all the methods accepting `timeout` option.
+   * @param timeout Maximum time in milliseconds
+   */
+  setDefaultTimeout(timeout: number): void;
+
+  /**
+   * Executes a shell command on the device and returns its output.
+   * @param command Shell command to execute.
+   */
+  shell(command: string): Promise<Buffer>;
+
+  /**
+   * Swipes the widget defined by `selector` in  the specified `direction`.
+   * @param selector Selector to swipe.
+   * @param direction Swipe direction.
+   * @param percent Distance to swipe as a percentage of the widget's size.
+   * @param options 
+   */
+  swipe(selector: AndroidSelector, direction: "down"|"up"|"left"|"right", percent: number, options?: {
+    /**
+     * Optional speed of the swipe in pixels per second.
+     */
+    speed?: number;
+
+    /**
+     * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
+     * using the
+     * [androidDevice.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-androiddevice#androiddevicesetdefaulttimeouttimeout)
+     * method.
+     */
+    timeout?: number;
+  }): Promise<void>;
+
+  /**
+   * Taps on the widget defined by `selector`.
+   * @param selector Selector to tap on.
+   * @param options 
+   */
+  tap(selector: AndroidSelector, options?: {
+    /**
+     * Optional duration of the tap in milliseconds.
+     */
+    duration?: number;
+
+    /**
+     * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
+     * using the
+     * [androidDevice.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-androiddevice#androiddevicesetdefaulttimeouttimeout)
+     * method.
+     */
+    timeout?: number;
+  }): Promise<void>;
+
+  /**
+   * Waits for the specific `selector` to either appear or disappear, depending on the `state`.
+   * @param selector Selector to wait for.
+   * @param options 
+   */
+  wait(selector: AndroidSelector, options?: {
+    /**
+     * Optional state. Can be either:
+     * - default - wait for element to be present.
+     * - `'gone'` - wait for element to not be present.
+     */
+    state?: "gone";
+
+    /**
+     * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
+     * using the
+     * [androidDevice.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-androiddevice#androiddevicesetdefaulttimeouttimeout)
+     * method.
+     */
+    timeout?: number;
+  }): Promise<void>;
+
+  /**
+   * Emitted when a new WebView instance is detected.
+   */
+  waitForEvent(event: 'webview', optionsOrPredicate?: { predicate?: (androidWebView: AndroidWebView) => boolean, timeout?: number } | ((androidWebView: AndroidWebView) => boolean)): Promise<AndroidWebView>;
+
+
+  /**
+   * This method waits until [AndroidWebView] matching the `selector` is opened and returns it. If there is already an open
+   * [AndroidWebView] matching the `selector`, returns immediately.
+   * @param selector 
+   * @param options 
+   */
+  webView(selector: {
+    /**
+     * Package identifier.
+     */
+    pkg: string;
+  }, options?: {
+    /**
+     * Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
+     * using the
+     * [androidDevice.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-androiddevice#androiddevicesetdefaulttimeouttimeout)
+     * method.
+     */
+    timeout?: number;
+  }): Promise<AndroidWebView>;
+
+  /**
+   * Currently open WebViews.
+   */
+  webViews(): Array<AndroidWebView>;
+}
+
+export interface AndroidInput {
+  /**
+   * Performs a drag between `from` and `to` points.
+   * @param from The start point of the drag.
+   * @param to The end point of the drag.
+   * @param steps The number of steps in the drag. Each step takes 5 milliseconds to complete.
+   */
+  drag(from: {
+    x: number;
+
+    y: number;
+  }, to: {
+    x: number;
+
+    y: number;
+  }, steps: number): Promise<void>;
+
+  /**
+   * Presses the `key`.
+   * @param key Key to press.
+   */
+  press(key: AndroidKey): Promise<void>;
+
+  /**
+   * Swipes following the path defined by `segments`.
+   * @param from The point to start swiping from.
+   * @param segments Points following the `from` point in the swipe gesture.
+   * @param steps The number of steps for each segment. Each step takes 5 milliseconds to complete, so 100 steps means half a second per each segment.
+   */
+  swipe(from: {
+    x: number;
+
+    y: number;
+  }, segments: Array<{
+    x: number;
+
+    y: number;
+  }>, steps: number): Promise<void>;
+
+  /**
+   * Taps at the specified `point`.
+   * @param point The point to tap at.
+   */
+  tap(point: {
+    x: number;
+
+    y: number;
+  }): Promise<void>;
+
+  /**
+   * Types `text` into currently focused widget.
+   * @param text Text to type.
+   */
+  type(text: string): Promise<void>;
+}
+
+/**
+ * [AndroidSocket] is a way to communicate with a process launched on the [AndroidDevice]. Use
+ * [androidDevice.open(command)](https://playwright.dev/docs/api/class-androiddevice#androiddeviceopencommand) to open a
+ * socket.
+ */
+export interface AndroidSocket {
+  /**
+   * Emitted when the socket is closed.
+   */
+  on(event: 'close', listener: () => void): this;
+
+  /**
+   * Emitted when data is available to read from the socket.
+   */
+  on(event: 'data', listener: (buffer: Buffer) => void): this;
+
+  /**
+   * Emitted when the socket is closed.
+   */
+  once(event: 'close', listener: () => void): this;
+
+  /**
+   * Emitted when data is available to read from the socket.
+   */
+  once(event: 'data', listener: (buffer: Buffer) => void): this;
+
+  /**
+   * Emitted when the socket is closed.
+   */
+  addListener(event: 'close', listener: () => void): this;
+
+  /**
+   * Emitted when data is available to read from the socket.
+   */
+  addListener(event: 'data', listener: (buffer: Buffer) => void): this;
+
+  /**
+   * Emitted when the socket is closed.
+   */
+  removeListener(event: 'close', listener: () => void): this;
+
+  /**
+   * Emitted when data is available to read from the socket.
+   */
+  removeListener(event: 'data', listener: (buffer: Buffer) => void): this;
+
+  /**
+   * Emitted when the socket is closed.
+   */
+  off(event: 'close', listener: () => void): this;
+
+  /**
+   * Emitted when data is available to read from the socket.
+   */
+  off(event: 'data', listener: (buffer: Buffer) => void): this;
+
+  /**
+   * Closes the socket.
+   */
+  close(): Promise<void>;
+
+  /**
+   * Writes some `data` to the socket.
+   * @param data Data to write.
+   */
+  write(data: Buffer): Promise<void>;
+}
+
+/**
+ * [AndroidWebView] represents a WebView open on the [AndroidDevice]. WebView is usually obtained using
+ * [androidDevice.webView(selector[, options])](https://playwright.dev/docs/api/class-androiddevice#androiddevicewebviewselector-options).
+ */
+export interface AndroidWebView {
+  /**
+   * Emitted when the WebView is closed.
+   */
+  on(event: 'close', listener: () => void): this;
+
+  /**
+   * Emitted when the WebView is closed.
+   */
+  once(event: 'close', listener: () => void): this;
+
+  /**
+   * Emitted when the WebView is closed.
+   */
+  addListener(event: 'close', listener: () => void): this;
+
+  /**
+   * Emitted when the WebView is closed.
+   */
+  removeListener(event: 'close', listener: () => void): this;
+
+  /**
+   * Emitted when the WebView is closed.
+   */
+  off(event: 'close', listener: () => void): this;
+
+  /**
+   * Connects to the WebView and returns a regular Playwright [Page] to interact with.
+   */
+  page(): Promise<Page>;
+
+  /**
+   * WebView process PID.
+   */
+  pid(): number;
+
+  /**
+   * WebView package identifier.
+   */
+  pkg(): string;
+}
 
 /**
  * - extends: [EventEmitter]
@@ -7072,7 +8251,7 @@ export interface Browser extends EventEmitter {
 
     /**
      * Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. See
-     * [page.emulateMedia(params)](https://playwright.dev/docs/api/class-page#pageemulatemediaparams) for more details.
+     * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#pageemulatemediaoptions) for more details.
      * Defaults to '`light`'.
      */
     colorScheme?: "light"|"dark"|"no-preference";
@@ -7215,9 +8394,9 @@ export interface Browser extends EventEmitter {
       dir: string;
 
       /**
-       * Optional dimensions of the recorded videos. If not specified the size will be equal to `viewport`. If `viewport` is not
-       * configured explicitly the video size defaults to 1280x720. Actual picture of each page will be scaled down if necessary
-       * to fit the specified size.
+       * Optional dimensions of the recorded videos. If not specified the size will be equal to `viewport` scaled down to fit
+       * into 800x800. If `viewport` is not configured explicitly the video size defaults to 800x450. Actual picture of each page
+       * will be scaled down if necessary to fit the specified size.
        */
       size?: {
         /**
@@ -7233,7 +8412,7 @@ export interface Browser extends EventEmitter {
     };
 
     /**
-     * Populates context with given storage state. This method can be used to initialize context with logged-in information
+     * Populates context with given storage state. This option can be used to initialize context with logged-in information
      * obtained via
      * [browserContext.storageState([options])](https://playwright.dev/docs/api/class-browsercontext#browsercontextstoragestateoptions).
      * Either a path to the file with saved storage, or an object with the following fields:
@@ -7876,6 +9055,12 @@ export interface ConsoleMessage {
  * })();
  * ```
  * 
+ * > NOTE: Dialogs are dismissed automatically, unless there is a
+ * [page.on('dialog')](https://playwright.dev/docs/api/class-page#pageondialog) listener. When listener is present, it
+ * **must** either [dialog.accept([promptText])](https://playwright.dev/docs/api/class-dialog#dialogacceptprompttext) or
+ * [dialog.dismiss()](https://playwright.dev/docs/api/class-dialog#dialogdismiss) the dialog - otherwise the page will
+ * [freeze](https://developer.mozilla.org/en-US/docs/Web/JavaScript/EventLoop#never_blocking) waiting for the dialog, and
+ * actions like click will never finish.
  */
 export interface Dialog {
   /**
@@ -7966,6 +9151,80 @@ export interface Download {
    * Returns downloaded url.
    */
   url(): string;
+}
+
+/**
+ * Playwright has **experimental** support for Electron automation. You can access electron namespace via:
+ * 
+ * ```js
+ * const { _electron } = require('playwright');
+ * ```
+ * 
+ * An example of the Electron automation script would be:
+ * 
+ * ```js
+ * const { _electron: electron } = require('playwright');
+ * 
+ * (async () => {
+ *   // Launch Electron app.
+ *   const electronApp = await electron.launch({ args: ['main.js'] });
+ * 
+ *   // Evaluation expression in the Electron context.
+ *   const appPath = await electronApp.evaluate(async (electron) => {
+ *     // This runs in the main Electron process, |electron| parameter
+ *     // here is always the result of the require('electron') in the main
+ *     // app script.
+ *     return electron.getAppPath();
+ *   });
+ * 
+ *   // Get the first window that the app opens, wait if necessary.
+ *   const window = await electronApp.firstWindow();
+ *   // Print the title.
+ *   console.log(await window.title());
+ *   // Capture a screenshot.
+ *   await window.screenshot({ path: 'intro.png' });
+ *   // Direct Electron console to Node terminal.
+ *   window.on('console', console.log);
+ *   // Click button.
+ *   await window.click('text=Click me');
+ * })();
+ * ```
+ * 
+ * Note that since you don't need Playwright to install web browsers when testing Electron, you can omit browser download
+ * via setting the following environment variable when installing Playwright:
+ * 
+ * ```sh js
+ * $ PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i -D playwright
+ * ```
+ * 
+ */
+export interface Electron {
+  /**
+   * Launches electron application specified with the `executablePath`.
+   * @param options 
+   */
+  launch(options?: {
+    /**
+     * Additional arguments to pass to the application when launching. You typically pass the main script name here.
+     */
+    args?: Array<string>;
+
+    /**
+     * Current working directory to launch application from.
+     */
+    cwd?: string;
+
+    /**
+     * Specifies environment variables that will be visible to Electron. Defaults to `process.env`.
+     */
+    env?: { [key: string]: string; };
+
+    /**
+     * Launches given Electron application. If not specified, launches the default Electron executable installed in this
+     * package, located at `node_modules/.bin/electron`.
+     */
+    executablePath?: string;
+  }): Promise<ElectronApplication>;
 }
 
 /**
@@ -9092,7 +10351,7 @@ export interface BrowserContextOptions {
 
   /**
    * Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. See
-   * [page.emulateMedia(params)](https://playwright.dev/docs/api/class-page#pageemulatemediaparams) for more details.
+   * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#pageemulatemediaoptions) for more details.
    * Defaults to '`light`'.
    */
   colorScheme?: "light"|"dark"|"no-preference";
@@ -9216,9 +10475,9 @@ export interface BrowserContextOptions {
     dir: string;
 
     /**
-     * Optional dimensions of the recorded videos. If not specified the size will be equal to `viewport`. If `viewport` is not
-     * configured explicitly the video size defaults to 1280x720. Actual picture of each page will be scaled down if necessary
-     * to fit the specified size.
+     * Optional dimensions of the recorded videos. If not specified the size will be equal to `viewport` scaled down to fit
+     * into 800x800. If `viewport` is not configured explicitly the video size defaults to 800x450. Actual picture of each page
+     * will be scaled down if necessary to fit the specified size.
      */
     size?: {
       /**
@@ -9234,7 +10493,7 @@ export interface BrowserContextOptions {
   };
 
   /**
-   * Populates context with given storage state. This method can be used to initialize context with logged-in information
+   * Populates context with given storage state. This option can be used to initialize context with logged-in information
    * obtained via
    * [browserContext.storageState([options])](https://playwright.dev/docs/api/class-browsercontext#browsercontextstoragestateoptions).
    * Either a path to the file with saved storage, or an object with the following fields:

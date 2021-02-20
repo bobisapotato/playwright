@@ -8,7 +8,7 @@
 Returns the buffer with response body.
 
 ## async method: Response.finished
-- returns: <[null]|[Error]>
+- returns: <[null]|[string]>
 
 Waits for this response to finish, returns failure error if request failed.
 
@@ -23,6 +23,7 @@ Returns the [Frame] that initiated this response.
 Returns the object with HTTP headers associated with the response. All header names are lower-case.
 
 ## async method: Response.json
+* langs: csharp, js, python
 - returns: <[Serializable]>
 
 Returns the JSON representation of response body.

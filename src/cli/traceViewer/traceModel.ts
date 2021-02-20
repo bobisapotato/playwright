@@ -29,7 +29,6 @@ export type ContextEntry = {
   created: trace.ContextCreatedTraceEvent;
   destroyed: trace.ContextDestroyedTraceEvent;
   pages: PageEntry[];
-  resourcesByUrl: Map<string, trace.NetworkResourceTraceEvent[]>;
 }
 
 export type VideoEntry = {
@@ -46,6 +45,7 @@ export type PageEntry = {
   actions: ActionEntry[];
   interestingEvents: InterestingPageEvent[];
   resources: trace.NetworkResourceTraceEvent[];
+  snapshotsByFrameId: { [key: string]: trace.FrameSnapshotTraceEvent[] };
 }
 
 export type ActionEntry = {
@@ -64,6 +64,8 @@ export type VideoMetaInfo = {
   endTime: number;
 };
 
+const kInterestingActions = ['click', 'dblclick', 'hover', 'check', 'uncheck', 'tap', 'fill', 'press', 'type', 'selectOption', 'setInputFiles', 'goto', 'setContent', 'goBack', 'goForward', 'reload'];
+
 export function readTraceFile(events: trace.TraceEvent[], traceModel: TraceModel, filePath: string) {
   const contextEntries = new Map<string, ContextEntry>();
   const pageEntries = new Map<string, PageEntry>();
@@ -72,13 +74,12 @@ export function readTraceFile(events: trace.TraceEvent[], traceModel: TraceModel
       case 'context-created': {
         contextEntries.set(event.contextId, {
           filePath,
-          name: filePath.substring(filePath.lastIndexOf('/') + 1),
+          name: event.debugName || filePath.substring(filePath.lastIndexOf('/') + 1),
           startTime: Number.MAX_VALUE,
           endTime: Number.MIN_VALUE,
           created: event,
           destroyed: undefined as any,
           pages: [],
-          resourcesByUrl: new Map(),
         });
         break;
       }
@@ -93,6 +94,7 @@ export function readTraceFile(events: trace.TraceEvent[], traceModel: TraceModel
           actions: [],
           resources: [],
           interestingEvents: [],
+          snapshotsByFrameId: {},
         };
         pageEntries.set(event.pageId, pageEntry);
         contextEntries.get(event.contextId)!.pages.push(pageEntry);
@@ -108,12 +110,14 @@ export function readTraceFile(events: trace.TraceEvent[], traceModel: TraceModel
         break;
       }
       case 'action': {
+        if (!kInterestingActions.includes(event.method))
+          break;
         const pageEntry = pageEntries.get(event.pageId!)!;
         const actionId = event.contextId + '/' + event.pageId + '/' + pageEntry.actions.length;
         const action: ActionEntry = {
           actionId,
           action: event,
-          thumbnailUrl: `action-preview/${actionId}.png`,
+          thumbnailUrl: `/action-preview/${actionId}.png`,
           resources: pageEntry.resources,
         };
         pageEntry.resources = [];
@@ -121,19 +125,12 @@ export function readTraceFile(events: trace.TraceEvent[], traceModel: TraceModel
         break;
       }
       case 'resource': {
-        const contextEntry = contextEntries.get(event.contextId)!;
         const pageEntry = pageEntries.get(event.pageId!)!;
         const action = pageEntry.actions[pageEntry.actions.length - 1];
         if (action)
           action.resources.push(event);
         else
           pageEntry.resources.push(event);
-        let responseEvents = contextEntry.resourcesByUrl.get(event.url);
-        if (!responseEvents) {
-          responseEvents = [];
-          contextEntry.resourcesByUrl.set(event.url, responseEvents);
-        }
-        responseEvents.push(event);
         break;
       }
       case 'dialog-opened':
@@ -142,6 +139,13 @@ export function readTraceFile(events: trace.TraceEvent[], traceModel: TraceModel
       case 'load': {
         const pageEntry = pageEntries.get(event.pageId)!;
         pageEntry.interestingEvents.push(event);
+        break;
+      }
+      case 'snapshot': {
+        const pageEntry = pageEntries.get(event.pageId!)!;
+        if (!(event.frameId in pageEntry.snapshotsByFrameId))
+          pageEntry.snapshotsByFrameId[event.frameId] = [];
+        pageEntry.snapshotsByFrameId[event.frameId]!.push(event);
         break;
       }
     }

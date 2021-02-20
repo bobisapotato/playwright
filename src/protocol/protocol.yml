@@ -12,12 +12,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+StackFrame:
+  type: object
+  properties:
+    file: string
+    line: number?
+    column: number?
+    function: string?
 
 # This object can be send with any rpc call in the "metadata" field.
+
 Metadata:
   type: object
   properties:
-    stack: string?
+    stack:
+      type: array?
+      items: StackFrame
+    apiName: string?
+
+
+WaitForEventInfo:
+  type: object
+  properties:
+    waitId: string
+    phase:
+      type: enum
+      literals:
+      - before
+      - after
+      - log
+    name: string?
+    stack:
+      type: array?
+      items: StackFrame
+    message: string?
+    error: string?
 
 
 Point:
@@ -305,6 +334,7 @@ BrowserType:
     launchPersistentContext:
       parameters:
         userDataDir: string
+        sdkLanguage: string
         executablePath: string?
         args:
           type: array?
@@ -373,6 +403,7 @@ BrowserType:
           - no-preference
         acceptDownloads: boolean?
         _traceDir: string?
+        _debugName: string?
         recordVideo:
           type: object?
           properties:
@@ -390,6 +421,15 @@ BrowserType:
       returns:
         context: BrowserContext
 
+    connectOverCDP:
+      parameters:
+        sdkLanguage: string
+        wsEndpoint: string
+        slowMo: number?
+        timeout: number?
+      returns:
+        browser: Browser
+        defaultContext: BrowserContext?
 
 Browser:
   type: interface
@@ -404,6 +444,7 @@ Browser:
 
     newContext:
       parameters:
+        sdkLanguage: string
         noDefaultViewport: boolean?
         viewport:
           type: object?
@@ -445,6 +486,7 @@ Browser:
           - no-preference
         acceptDownloads: boolean?
         _traceDir: string?
+        _debugName: string?
         recordVideo:
           type: object?
           properties:
@@ -599,11 +641,20 @@ BrowserContext:
           type: array
           items: OriginStorage
 
-    extendInjectedScript:
+    pause:
+      experimental: True
+
+    recorderSupplementEnable:
       experimental: True
       parameters:
-        source: string
-        arg: SerializedArgument
+        language: string?
+        startRecording: boolean?
+        pauseOnNextStatement: boolean?
+        launchOptions: json?
+        contextOptions: json?
+        device: string?
+        saveStorage: string?
+        outputFile: string?
 
     crNewCDPSession:
       parameters:
@@ -635,8 +686,6 @@ BrowserContext:
     crServiceWorker:
       parameters:
         worker: Worker
-
-
 
 Page:
   type: interface
@@ -842,8 +891,6 @@ Page:
       returns:
         rootAXNode: AXNode?
 
-    pause:
-
     pdf:
       parameters:
         scale: number?
@@ -1028,7 +1075,7 @@ Frame:
       parameters:
         selector: string
         expression: string
-        isFunction: boolean
+        isFunction: boolean?
         arg: SerializedArgument
       returns:
         value: SerializedValue
@@ -1037,7 +1084,7 @@ Frame:
       parameters:
         selector: string
         expression: string
-        isFunction: boolean
+        isFunction: boolean?
         arg: SerializedArgument
       returns:
         value: SerializedValue
@@ -1127,7 +1174,7 @@ Frame:
     evaluateExpression:
       parameters:
         expression: string
-        isFunction: boolean
+        isFunction: boolean?
         arg: SerializedArgument
         world:
           type: enum?
@@ -1140,7 +1187,7 @@ Frame:
     evaluateExpressionHandle:
       parameters:
         expression: string
-        isFunction: boolean
+        isFunction: boolean?
         arg: SerializedArgument
         world:
           type: enum?
@@ -1374,7 +1421,7 @@ Frame:
     waitForFunction:
       parameters:
         expression: string
-        isFunction: boolean
+        isFunction: boolean?
         arg: SerializedArgument
         timeout: number?
         # When present, polls on interval. Otherwise, polls on raf.
@@ -1436,7 +1483,7 @@ Worker:
     evaluateExpression:
       parameters:
         expression: string
-        isFunction: boolean
+        isFunction: boolean?
         arg: SerializedArgument
       returns:
         value: SerializedValue
@@ -1444,7 +1491,7 @@ Worker:
     evaluateExpressionHandle:
       parameters:
         expression: string
-        isFunction: boolean
+        isFunction: boolean?
         arg: SerializedArgument
       returns:
         handle: JSHandle
@@ -1467,7 +1514,7 @@ JSHandle:
     evaluateExpression:
       parameters:
         expression: string
-        isFunction: boolean
+        isFunction: boolean?
         arg: SerializedArgument
       returns:
         value: SerializedValue
@@ -1475,7 +1522,7 @@ JSHandle:
     evaluateExpressionHandle:
       parameters:
         expression: string
-        isFunction: boolean
+        isFunction: boolean?
         arg: SerializedArgument
       returns:
         handle: JSHandle
@@ -1519,7 +1566,7 @@ ElementHandle:
       parameters:
         selector: string
         expression: string
-        isFunction: boolean
+        isFunction: boolean?
         arg: SerializedArgument
       returns:
         value: SerializedValue
@@ -1528,7 +1575,7 @@ ElementHandle:
       parameters:
         selector: string
         expression: string
-        isFunction: boolean
+        isFunction: boolean?
         arg: SerializedArgument
       returns:
         value: SerializedValue
@@ -2063,7 +2110,6 @@ CDPSession:
         params: json?
 
 
-
 Electron:
   type: interface
 
@@ -2071,7 +2117,8 @@ Electron:
 
     launch:
       parameters:
-        executablePath: string
+        sdkLanguage: string
+        executablePath: string?
         args:
           type: array?
           items: string
@@ -2079,13 +2126,9 @@ Electron:
         env:
           type: array?
           items: NameValue
-        handleSIGINT: boolean?
-        handleSIGTERM: boolean?
-        handleSIGHUP: boolean?
         timeout: number?
       returns:
         electronApplication: ElectronApplication
-
 
 
 ElectronApplication:
@@ -2093,16 +2136,10 @@ ElectronApplication:
 
   commands:
 
-    newBrowserWindow:
-      parameters:
-        arg: SerializedArgument
-      returns:
-        page: Page
-
     evaluateExpression:
       parameters:
         expression: string
-        isFunction: boolean
+        isFunction: boolean?
         arg: SerializedArgument
       returns:
         value: SerializedValue
@@ -2110,7 +2147,7 @@ ElectronApplication:
     evaluateExpressionHandle:
       parameters:
         expression: string
-        isFunction: boolean
+        isFunction: boolean?
         arg: SerializedArgument
       returns:
         handle: JSHandle
@@ -2266,10 +2303,6 @@ AndroidDevice:
       returns:
         info: AndroidElementInfo
 
-    tree:
-      returns:
-        tree: AndroidElementInfo
-
     screenshot:
       returns:
         binary: binary
@@ -2301,6 +2334,7 @@ AndroidDevice:
 
     launchBrowser:
       parameters:
+        sdkLanguage: string
         pkg: string?
         ignoreHTTPSErrors: boolean?
         javaScriptEnabled: boolean?
@@ -2337,6 +2371,7 @@ AndroidDevice:
           - no-preference
         acceptDownloads: boolean?
         _traceDir: string?
+        _debugName: string?
         recordVideo:
           type: object?
           properties:
@@ -2393,6 +2428,7 @@ AndroidDevice:
 
     connectToWebView:
       parameters:
+        sdkLanguage: string
         pid: number
       returns:
         context: BrowserContext

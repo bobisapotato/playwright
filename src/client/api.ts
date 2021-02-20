@@ -15,6 +15,7 @@
  */
 
 export { Accessibility } from './accessibility';
+export { Android, AndroidDevice, AndroidWebView, AndroidInput, AndroidSocket } from './android';
 export { Browser } from './browser';
 export { BrowserContext } from './browserContext';
 export { BrowserServer } from './browserType';
@@ -22,6 +23,7 @@ export { BrowserType } from './browserType';
 export { ConsoleMessage } from './consoleMessage';
 export { Dialog } from './dialog';
 export { Download } from './download';
+export { Electron, ElectronApplication } from './electron';
 export { ElementHandle } from './elementHandle';
 export { FileChooser } from './fileChooser';
 export { Logger } from './types';

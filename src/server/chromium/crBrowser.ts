@@ -97,8 +97,8 @@ export class CRBrowser extends Browser {
     this._session.on('Target.detachedFromTarget', this._onDetachedFromTarget.bind(this));
   }
 
-  async newContext(options: types.BrowserContextOptions = {}): Promise<BrowserContext> {
-    validateBrowserContextOptions(options, this._options);
+  async newContext(options: types.BrowserContextOptions): Promise<BrowserContext> {
+    validateBrowserContextOptions(options, this.options);
     const { browserContextId } = await this._session.send('Target.createBrowserContext', {
       disposeOnDetach: true,
       proxyServer: options.proxy ? options.proxy.server : undefined,
@@ -119,7 +119,7 @@ export class CRBrowser extends Browser {
   }
 
   isClank(): boolean {
-    return this._options.name === 'clank';
+    return this.options.name === 'clank';
   }
 
   _onAttachedToTarget({targetInfo, sessionId, waitingForDebugger}: Protocol.Target.attachedToTargetPayload) {
@@ -156,8 +156,9 @@ export class CRBrowser extends Browser {
     if (targetInfo.type === 'background_page') {
       const backgroundPage = new CRPage(session, targetInfo.targetId, context, null, false);
       this._backgroundPages.set(targetInfo.targetId, backgroundPage);
-      backgroundPage.pageOrError().then(() => {
-        context!.emit(CRBrowserContext.CREvents.BackgroundPage, backgroundPage._page);
+      backgroundPage.pageOrError().then(pageOrError => {
+        if (pageOrError instanceof Page)
+          context!.emit(CRBrowserContext.CREvents.BackgroundPage, backgroundPage._page);
       });
       return;
     }
@@ -263,7 +264,7 @@ class CRServiceWorker extends Worker {
   readonly _browserContext: CRBrowserContext;
 
   constructor(browserContext: CRBrowserContext, session: CRSession, url: string) {
-    super(url);
+    super(browserContext, url);
     this._browserContext = browserContext;
     session.once('Runtime.executionContextCreated', event => {
       this._createExecutionContext(new CRExecutionContext(session, event.context));
@@ -293,11 +294,11 @@ export class CRBrowserContext extends BrowserContext {
   async _initialize() {
     assert(!Array.from(this._browser._crPages.values()).some(page => page._browserContext === this));
     const promises: Promise<any>[] = [ super._initialize() ];
-    if (this._browser._options.downloadsPath) {
+    if (this._browser.options.downloadsPath) {
       promises.push(this._browser._session.send('Browser.setDownloadBehavior', {
         behavior: this._options.acceptDownloads ? 'allowAndName' : 'deny',
         browserContextId: this._browserContextId,
-        downloadPath: this._browser._options.downloadsPath
+        downloadPath: this._browser.options.downloadsPath
       }));
     }
     if (this._options.permissions)

@@ -26,12 +26,12 @@ import * as types from './types';
 import { BrowserContext, Video } from './browserContext';
 import { ConsoleMessage } from './console';
 import * as accessibility from './accessibility';
-import { EventEmitter } from 'events';
 import { FileChooser } from './fileChooser';
-import { ProgressController, runAbortableTask } from './progress';
+import { ProgressController } from './progress';
 import { assert, isError } from '../utils/utils';
 import { debugLogger } from '../utils/debugLogger';
 import { Selectors } from './selectors';
+import { CallMetadata, SdkObject } from './instrumentation';
 
 export interface PageDelegate {
   readonly rawMouse: input.RawMouse;
@@ -92,7 +92,7 @@ type PageState = {
   extraHTTPHeaders: types.HeadersArray | null;
 };
 
-export class Page extends EventEmitter {
+export class Page extends SdkObject {
   static Events = {
     Close: 'close',
     Crash: 'crash',
@@ -149,8 +149,8 @@ export class Page extends EventEmitter {
   _video: Video | null = null;
 
   constructor(delegate: PageDelegate, browserContext: BrowserContext) {
-    super();
-    this.setMaxListeners(0);
+    super(browserContext);
+    this.attribution.page = this;
     this._delegate = delegate;
     this._closedCallback = () => {};
     this._closedPromise = new Promise(f => this._closedCallback = f);
@@ -198,7 +198,7 @@ export class Page extends EventEmitter {
   }
 
   async _doSlowMo() {
-    const slowMo = this._browserContext._browser._options.slowMo;
+    const slowMo = this._browserContext._browser.options.slowMo;
     if (!slowMo)
       return;
     await new Promise(x => setTimeout(x, slowMo));
@@ -226,7 +226,13 @@ export class Page extends EventEmitter {
   }
 
   async _onFileChooserOpened(handle: dom.ElementHandle) {
-    const multiple = await handle.evaluate(element => !!(element as HTMLInputElement).multiple);
+    let multiple;
+    try {
+      multiple = await handle.evaluate(element => !!(element as HTMLInputElement).multiple);
+    } catch (e) {
+      // Frame/context may be gone during async processing. Do not throw.
+      return;
+    }
     if (!this.listenerCount(Page.Events.FileChooser)) {
       handle.dispose();
       return;
@@ -290,8 +296,8 @@ export class Page extends EventEmitter {
       this.emit(Page.Events.Console, message);
   }
 
-  async reload(controller: ProgressController, options: types.NavigateOptions): Promise<network.Response | null> {
-    this.mainFrame().setupNavigationProgressController(controller);
+  async reload(metadata: CallMetadata, options: types.NavigateOptions): Promise<network.Response | null> {
+    const controller = this.mainFrame().setupNavigationProgressController(metadata);
     const response = await controller.run(async progress => {
       // Note: waitForNavigation may fail before we get response to reload(),
       // so we should await it immediately.
@@ -305,8 +311,8 @@ export class Page extends EventEmitter {
     return response;
   }
 
-  async goBack(controller: ProgressController, options: types.NavigateOptions): Promise<network.Response | null> {
-    this.mainFrame().setupNavigationProgressController(controller);
+  async goBack(metadata: CallMetadata, options: types.NavigateOptions): Promise<network.Response | null> {
+    const controller = this.mainFrame().setupNavigationProgressController(metadata);
     const response = await controller.run(async progress => {
       // Note: waitForNavigation may fail before we get response to goBack,
       // so we should catch it immediately.
@@ -327,8 +333,8 @@ export class Page extends EventEmitter {
     return response;
   }
 
-  async goForward(controller: ProgressController, options: types.NavigateOptions): Promise<network.Response | null> {
-    this.mainFrame().setupNavigationProgressController(controller);
+  async goForward(metadata: CallMetadata, options: types.NavigateOptions): Promise<network.Response | null> {
+    const controller = this.mainFrame().setupNavigationProgressController(metadata);
     const response = await controller.run(async progress => {
       // Note: waitForNavigation may fail before we get response to goForward,
       // so we should catch it immediately.
@@ -415,13 +421,14 @@ export class Page extends EventEmitter {
     route.continue();
   }
 
-  async screenshot(options: types.ScreenshotOptions = {}): Promise<Buffer> {
-    return runAbortableTask(
+  async screenshot(metadata: CallMetadata, options: types.ScreenshotOptions = {}): Promise<Buffer> {
+    const controller = new ProgressController(metadata, this);
+    return controller.run(
         progress => this._screenshotter.screenshotPage(progress, options),
         this._timeoutSettings.timeout(options));
   }
 
-  async close(options?: { runBeforeUnload?: boolean }) {
+  async close(metadata: CallMetadata, options?: { runBeforeUnload?: boolean }) {
     if (this._closedState === 'closed')
       return;
     const runBeforeUnload = !!options && !!options.runBeforeUnload;
@@ -435,7 +442,7 @@ export class Page extends EventEmitter {
     if (!runBeforeUnload)
       await this._closedPromise;
     if (this._ownedContext)
-      await this._ownedContext.close();
+      await this._ownedContext.close(metadata);
   }
 
   private _setIsError() {
@@ -481,7 +488,9 @@ export class Page extends EventEmitter {
     const url = frame.url();
     if (!url.startsWith('http'))
       return;
-    this._browserContext.addVisitedOrigin(new URL(url).origin);
+    const purl = network.parsedURL(url);
+    if (purl)
+      this._browserContext.addVisitedOrigin(purl.origin);
   }
 
   allBindings() {
@@ -492,52 +501,27 @@ export class Page extends EventEmitter {
     const identifier = PageBinding.identifier(name, world);
     return this._pageBindings.get(identifier) || this._browserContext._pageBindings.get(identifier);
   }
-
-  async pause() {
-    if (!this._browserContext._browser._options.headful)
-      throw new Error('Cannot pause in headless mode.');
-    await this.mainFrame().evaluateSurvivingNavigations(async context => {
-      await context.evaluateInternal(async () => {
-        const element = document.createElement('playwright-resume');
-        element.style.position = 'absolute';
-        element.style.top = '10px';
-        element.style.left = '10px';
-        element.style.zIndex = '2147483646';
-        element.style.opacity = '0.9';
-        element.setAttribute('role', 'button');
-        element.tabIndex = 0;
-        element.style.fontSize = '50px';
-        element.textContent = '▶️';
-        element.title = 'Resume script';
-        document.body.appendChild(element);
-        await new Promise(x => {
-          element.onclick = x;
-        });
-        element.remove();
-      });
-    }, 'utility');
-  }
 }
 
-export class Worker extends EventEmitter {
+export class Worker extends SdkObject {
   static Events = {
     Close: 'close',
   };
 
   private _url: string;
   private _executionContextPromise: Promise<js.ExecutionContext>;
-  private _executionContextCallback: (value?: js.ExecutionContext) => void;
+  private _executionContextCallback: (value: js.ExecutionContext) => void;
   _existingExecutionContext: js.ExecutionContext | null = null;
 
-  constructor(url: string) {
-    super();
+  constructor(parent: SdkObject, url: string) {
+    super(parent);
     this._url = url;
     this._executionContextCallback = () => {};
     this._executionContextPromise = new Promise(x => this._executionContextCallback = x);
   }
 
   _createExecutionContext(delegate: js.ExecutionContextDelegate) {
-    this._existingExecutionContext = new js.ExecutionContext(delegate);
+    this._existingExecutionContext = new js.ExecutionContext(this, delegate);
     this._executionContextCallback(this._existingExecutionContext);
   }
 
@@ -545,11 +529,11 @@ export class Worker extends EventEmitter {
     return this._url;
   }
 
-  async _evaluateExpression(expression: string, isFunction: boolean, arg: any): Promise<any> {
+  async _evaluateExpression(expression: string, isFunction: boolean | undefined, arg: any): Promise<any> {
     return js.evaluateExpression(await this._executionContextPromise, true /* returnByValue */, expression, isFunction, arg);
   }
 
-  async _evaluateExpressionHandle(expression: string, isFunction: boolean, arg: any): Promise<any> {
+  async _evaluateExpressionHandle(expression: string, isFunction: boolean | undefined, arg: any): Promise<any> {
     return js.evaluateExpression(await this._executionContextPromise, false /* returnByValue */, expression, isFunction, arg);
   }
 }

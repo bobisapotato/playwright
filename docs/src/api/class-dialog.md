@@ -1,4 +1,3 @@
-
 # class: Dialog
 
 [Dialog] objects are dispatched by page via the [`event: Page.dialog`] event.
@@ -60,6 +59,11 @@ def run(playwright):
 with sync_playwright() as playwright:
     run(playwright)
 ```
+
+:::note
+Dialogs are dismissed automatically, unless there is a [`event: Page.dialog`] listener.
+When listener is present, it **must** either [`method: Dialog.accept`] or [`method: Dialog.dismiss`] the dialog - otherwise the page will [freeze](https://developer.mozilla.org/en-US/docs/Web/JavaScript/EventLoop#never_blocking) waiting for the dialog, and actions like click will never finish.
+:::
 
 ## async method: Dialog.accept
 

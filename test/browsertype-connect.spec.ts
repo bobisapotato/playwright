@@ -16,7 +16,7 @@
  */
 
 import { folio } from './remoteServer.fixture';
-import * as fs from 'fs';
+import fs from 'fs';
 const { it, expect, describe } = folio;
 
 describe('connect', (suite, { mode }) => {
@@ -255,5 +255,19 @@ describe('connect', (suite, { mode }) => {
 
     const files = fs.readdirSync(videosPath);
     expect(files.some(file => file.endsWith('webm'))).toBe(true);
+  });
+
+  it('should be able to connect 20 times to a single server without warnings', async ({browserType, remoteServer, server}) => {
+    let warning = null;
+    const warningHandler = w => warning = w;
+    process.on('warning', warningHandler);
+
+    const browsers = [];
+    for (let i = 0; i < 20; i++)
+      browsers.push(await browserType.connect({ wsEndpoint: remoteServer.wsEndpoint() }));
+    await Promise.all([browsers.map(browser => browser.close())]);
+
+    process.off('warning', warningHandler);
+    expect(warning).toBe(null);
   });
 });

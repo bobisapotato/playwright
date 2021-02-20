@@ -18,6 +18,7 @@ import { Dispatcher, DispatcherScope, existingDispatcher } from './dispatcher';
 import { Android, AndroidDevice, SocketBackend } from '../server/android/android';
 import * as channels from '../protocol/channels';
 import { BrowserContextDispatcher } from './browserContextDispatcher';
+import { CallMetadata } from '../server/instrumentation';
 
 export class AndroidDispatcher extends Dispatcher<Android, channels.AndroidInitializer> implements channels.AndroidChannel {
   constructor(scope: DispatcherScope, android: Android) {
@@ -99,10 +100,6 @@ export class AndroidDeviceDispatcher extends Dispatcher<AndroidDevice, channels.
     return { info: await this._object.send('info', params) };
   }
 
-  async tree(params: channels.AndroidDeviceTreeParams): Promise<channels.AndroidDeviceTreeResult> {
-    return { tree: await this._object.send('tree', params) };
-  }
-
   async inputType(params: channels.AndroidDeviceInputTypeParams) {
     const text = params.text;
     const keyCodes: number[] = [];
@@ -141,7 +138,7 @@ export class AndroidDeviceDispatcher extends Dispatcher<AndroidDevice, channels.
     return { result: (await this._object.shell(params.command)).toString('base64') };
   }
 
-  async open(params: channels.AndroidDeviceOpenParams, metadata?: channels.Metadata): Promise<channels.AndroidDeviceOpenResult> {
+  async open(params: channels.AndroidDeviceOpenParams, metadata: CallMetadata): Promise<channels.AndroidDeviceOpenResult> {
     const socket = await this._object.open(params.command);
     return { socket: new AndroidSocketDispatcher(this._scope, socket) };
   }
@@ -168,7 +165,7 @@ export class AndroidDeviceDispatcher extends Dispatcher<AndroidDevice, channels.
   }
 
   async connectToWebView(params: channels.AndroidDeviceConnectToWebViewParams): Promise<channels.AndroidDeviceConnectToWebViewResult> {
-    return { context: new BrowserContextDispatcher(this._scope, await this._object.connectToWebView(params.pid)) };
+    return { context: new BrowserContextDispatcher(this._scope, await this._object.connectToWebView(params.pid, params.sdkLanguage)) };
   }
 }
 
@@ -182,11 +179,11 @@ export class AndroidSocketDispatcher extends Dispatcher<SocketBackend, channels.
     });
   }
 
-  async write(params: channels.AndroidSocketWriteParams, metadata?: channels.Metadata): Promise<void> {
+  async write(params: channels.AndroidSocketWriteParams, metadata: CallMetadata): Promise<void> {
     await this._object.write(Buffer.from(params.data, 'base64'));
   }
 
-  async close(params: channels.AndroidSocketCloseParams, metadata?: channels.Metadata): Promise<void> {
+  async close(params: channels.AndroidSocketCloseParams, metadata: CallMetadata): Promise<void> {
     await this._object.close();
   }
 }
@@ -284,6 +281,7 @@ const keyMap = new Map<string, number>([
   ['Slash', 76],
   ['/', 76],
   ['At', 77],
+  ['@', 77],
   ['Num', 78],
   ['HeadsetHook', 79],
   ['Focus', 80],
@@ -291,4 +289,9 @@ const keyMap = new Map<string, number>([
   ['Menu', 82],
   ['Notification', 83],
   ['Search', 84],
+  ['AppSwitch', 187],
+  ['Assist', 219],
+  ['Cut', 277],
+  ['Copy', 278],
+  ['Paste', 279],
 ]);

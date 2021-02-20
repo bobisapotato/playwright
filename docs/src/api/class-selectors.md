@@ -65,6 +65,12 @@ contain `[a-zA-Z0-9_]` characters.
 
 Script that evaluates to a selector engine instance.
 
+### param: Selectors.register.script
+* langs: csharp, java
+- `script` <[string]|[path]>
+
+Script that evaluates to a selector engine instance.
+
 ### option: Selectors.register.contentScript
 - `contentScript` <[boolean]>
 

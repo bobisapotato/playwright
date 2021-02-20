@@ -63,6 +63,27 @@ This methods attaches Playwright to an existing browser instance.
   - `timeout` <[float]> Maximum time in milliseconds to wait for the connection to be established. Defaults to
     `30000` (30 seconds). Pass `0` to disable timeout.
 
+## async method: BrowserType.connectOverCDP
+* langs: js
+- returns: <[Browser]>
+
+This methods attaches Playwright to an existing browser instance using the Chrome DevTools Protocol.
+
+The default browser context is accessible via [`method: Browser.contexts`].
+
+:::note
+Connecting over the Chrome DevTools Protocol is only supported for Chromium-based browsers.
+:::
+
+### param: BrowserType.connectOverCDP.params
+- `params` <[Object]>
+  - `wsEndpoint` <[string]> A CDP websocket endpoint to connect to.
+  - `slowMo` <[float]> Slows down Playwright operations by the specified amount of milliseconds. Useful so that you
+    can see what is going on. Defaults to 0.
+  - `logger` <[Logger]> Logger sink for Playwright logging. Optional.
+  - `timeout` <[float]> Maximum time in milliseconds to wait for the connection to be established. Defaults to
+    `30000` (30 seconds). Pass `0` to disable timeout.
+
 ## method: BrowserType.executablePath
 - returns: <[string]>
 
@@ -93,7 +114,7 @@ browser = playwright.chromium.launch( # or "firefox" or "webkit".
 )
 ```
 
-> **Chromium-only** Playwright can also be used to control the Chrome browser, but it works best with the version of
+> **Chromium-only** Playwright can also be used to control the Google Chrome or Microsoft Edge browsers, but it works best with the version of
 Chromium it is bundled with. There is no guarantee it will work with any other version. Use [`option: executablePath`]
 option with extreme caution.
 >
@@ -101,11 +122,8 @@ option with extreme caution.
 [Chrome Canary](https://www.google.com/chrome/browser/canary.html) or
 [Dev Channel](https://www.chromium.org/getting-involved/dev-channel) build is suggested.
 >
-> In [`method: BrowserType.launch`] above, any mention of Chromium also applies to Chrome.
->
-> See [`this article`](https://www.howtogeek.com/202825/what%E2%80%99s-the-difference-between-chromium-and-chrome/) for
-a description of the differences between Chromium and Chrome.
-[`This article`](https://chromium.googlesource.com/chromium/src/+/lkgr/docs/chromium_browser_vs_google_chrome.md)
+> Stock browsers like Google Chrome and Microsoft Edge are suitable for tests that require proprietary media codecs for video playback. See [this article](https://www.howtogeek.com/202825/what%E2%80%99s-the-difference-between-chromium-and-chrome/) for other differences between Chromium and Chrome.
+[This article](https://chromium.googlesource.com/chromium/src/+/lkgr/docs/chromium_browser_vs_google_chrome.md)
 describes some differences for Linux users.
 
 ### option: BrowserType.launch.headless
@@ -129,23 +147,9 @@ Firefox or WebKit, use at your own risk.
 Additional arguments to pass to the browser instance. The list of Chromium flags can be found
 [here](http://peter.sh/experiments/chromium-command-line-switches/).
 
-### option: BrowserType.launch.ignoreDefaultArgs
-- `ignoreDefaultArgs` <[boolean]|[Array]<[string]>>
+### option: BrowserType.launch.ignoreDefaultArgs = %%-browser-option-ignoredefaultargs-%%
 
-If `true`, Playwright does not pass its own configurations args and only uses the ones from [`option: args`]. If an
-array is given, then filters out the given default arguments. Dangerous option; use with care. Defaults to `false`.
-
-### option: BrowserType.launch.proxy
-- `proxy` <[Object]>
-  - `server` <[string]> Proxy to be used for all requests. HTTP and SOCKS proxies are supported, for example
-    `http://myproxy.com:3128` or `socks5://myproxy.com:3128`. Short form `myproxy.com:3128` is considered an HTTP
-    proxy.
-  - `bypass` <[string]> Optional coma-separated domains to bypass proxy, for example `".com, chromium.org,
-    .domain.com"`.
-  - `username` <[string]> Optional username to use if HTTP proxy requires authentication.
-  - `password` <[string]> Optional password to use if HTTP proxy requires authentication.
-
-Network proxy settings.
+### option: BrowserType.launch.proxy = %%-browser-option-proxy-%%
 
 ### option: BrowserType.launch.downloadsPath
 - `downloadsPath` <[path]>
@@ -159,7 +163,15 @@ deleted when browser is closed.
 Enable Chromium sandboxing. Defaults to `false`.
 
 ### option: BrowserType.launch.firefoxUserPrefs
+* langs: js, python
 - `firefoxUserPrefs` <[Object]<[string], [string]|[float]|[boolean]>>
+
+Firefox user preferences. Learn more about the Firefox user preferences at
+[`about:config`](https://support.mozilla.org/en-US/kb/about-config-editor-firefox).
+
+### option: BrowserType.launch.firefoxUserPrefs
+* langs: csharp, java
+- `firefoxUserPrefs` <[Object]<[string], [any]>>
 
 Firefox user preferences. Learn more about the Firefox user preferences at
 [`about:config`](https://support.mozilla.org/en-US/kb/about-config-editor-firefox).
@@ -191,10 +203,9 @@ Logger sink for Playwright logging.
 Maximum time in milliseconds to wait for the browser instance to start. Defaults to `30000` (30 seconds). Pass `0` to
 disable timeout.
 
-### option: BrowserType.launch.env
-- `env` <[Object]<[string], [string]|[float]|[boolean]>>
+### option: BrowserType.launch.env = %%-csharp-java-browser-option-env-%%
 
-Specify environment variables that will be visible to the browser. Defaults to `process.env`.
+### option: BrowserType.launch.env = %%-js-python-browser-option-env-%%
 
 ### option: BrowserType.launch.devtools
 - `devtools` <[boolean]>
@@ -219,8 +230,9 @@ this context will automatically close the browser.
 - `userDataDir` <[path]>
 
 Path to a User Data Directory, which stores browser session data like cookies and local storage. More details for
-[Chromium](https://chromium.googlesource.com/chromium/src/+/master/docs/user_data_dir.md) and
+[Chromium](https://chromium.googlesource.com/chromium/src/+/master/docs/user_data_dir.md#introduction) and
 [Firefox](https://developer.mozilla.org/en-US/docs/Mozilla/Command_Line_Options#User_Profile).
+Note that Chromium's user data directory is the **parent** directory of the "Profile Path" seen at `chrome://version`.
 
 ### option: BrowserType.launchPersistentContext.headless
 - `headless` <[boolean]>
@@ -243,23 +255,9 @@ bundled Chromium, Firefox or WebKit, use at your own risk.
 Additional arguments to pass to the browser instance. The list of Chromium flags can be found
 [here](http://peter.sh/experiments/chromium-command-line-switches/).
 
-### option: BrowserType.launchPersistentContext.ignoreDefaultArgs
-- `ignoreDefaultArgs` <[boolean]|[Array]<[string]>>
+### option: BrowserType.launchPersistentContext.ignoreDefaultArgs = %%-browser-option-ignoredefaultargs-%%
 
-If `true`, then do not use any of the default arguments. If an array is given, then filter out the given default
-arguments. Dangerous option; use with care. Defaults to `false`.
-
-### option: BrowserType.launchPersistentContext.proxy
-- `proxy` <[Object]>
-  - `server` <[string]> Proxy to be used for all requests. HTTP and SOCKS proxies are supported, for example
-    `http://myproxy.com:3128` or `socks5://myproxy.com:3128`. Short form `myproxy.com:3128` is considered an HTTP
-    proxy.
-  - `bypass` <[string]> Optional coma-separated domains to bypass proxy, for example `".com, chromium.org,
-    .domain.com"`.
-  - `username` <[string]> Optional username to use if HTTP proxy requires authentication.
-  - `password` <[string]> Optional password to use if HTTP proxy requires authentication.
-
-Network proxy settings.
+### option: BrowserType.launchPersistentContext.proxy = %%-browser-option-proxy-%%
 
 ### option: BrowserType.launchPersistentContext.downloadsPath
 - `downloadsPath` <[path]>
@@ -293,10 +291,9 @@ Close the browser process on SIGHUP. Defaults to `true`.
 Maximum time in milliseconds to wait for the browser instance to start. Defaults to `30000` (30 seconds). Pass `0` to
 disable timeout.
 
-### option: BrowserType.launchPersistentContext.env
-- `env` <[Object]<[string], [string]|[float]|[boolean]>>
+### option: BrowserType.launchPersistentContext.env = %%-csharp-java-browser-option-env-%%
 
-Specify environment variables that will be visible to the browser. Defaults to `process.env`.
+### option: BrowserType.launchPersistentContext.env = %%-js-python-browser-option-env-%%
 
 ### option: BrowserType.launchPersistentContext.devtools
 - `devtools` <[boolean]>
@@ -360,23 +357,9 @@ bundled Chromium, Firefox or WebKit, use at your own risk.
 Additional arguments to pass to the browser instance. The list of Chromium flags can be found
 [here](http://peter.sh/experiments/chromium-command-line-switches/).
 
-### option: BrowserType.launchServer.ignoreDefaultArgs
-- `ignoreDefaultArgs` <[boolean]|[Array]<[string]>>
+### option: BrowserType.launchServer.ignoreDefaultArgs = %%-browser-option-ignoredefaultargs-%%
 
-If `true`, then do not use any of the default arguments. If an array is given, then filter out the given default
-arguments. Dangerous option; use with care. Defaults to `false`.
-
-### option: BrowserType.launchServer.proxy
-- `proxy` <[Object]>
-  - `server` <[string]> Proxy to be used for all requests. HTTP and SOCKS proxies are supported, for example
-    `http://myproxy.com:3128` or `socks5://myproxy.com:3128`. Short form `myproxy.com:3128` is considered an HTTP
-    proxy.
-  - `bypass` <[string]> Optional coma-separated domains to bypass proxy, for example `".com, chromium.org,
-    .domain.com"`.
-  - `username` <[string]> Optional username to use if HTTP proxy requires authentication.
-  - `password` <[string]> Optional password to use if HTTP proxy requires authentication.
-
-Network proxy settings.
+### option: BrowserType.launchServer.proxy = %%-browser-option-proxy-%%
 
 ### option: BrowserType.launchServer.downloadsPath
 - `downloadsPath` <[path]>
@@ -422,10 +405,7 @@ Logger sink for Playwright logging.
 Maximum time in milliseconds to wait for the browser instance to start. Defaults to `30000` (30 seconds). Pass `0` to
 disable timeout.
 
-### option: BrowserType.launchServer.env
-- `env` <[Object]<[string], [string]|[float]|[boolean]>>
-
-Specify environment variables that will be visible to the browser. Defaults to `process.env`.
+### option: BrowserType.launchServer.env = %%-js-python-browser-option-env-%%
 
 ### option: BrowserType.launchServer.devtools
 - `devtools` <[boolean]>

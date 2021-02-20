@@ -15,16 +15,12 @@
  */
 
 import * as http from 'http';
-import { Writable } from 'stream';
-import * as path from 'path';
+import path from 'path';
 import { ChildProcess, spawn } from 'child_process';
-import { folio as baseFolio } from '../fixtures';
-import type { Page, BrowserType, Browser, BrowserContext } from '../..';
+import { folio as baseFolio } from '../recorder.fixtures';
+import type { BrowserType, Browser, Page } from '../..';
 export { config } from 'folio';
-import { RecorderController } from '../../src/cli/codegen/recorderController';
-import { TerminalOutput } from '../../src/cli/codegen/outputs';
-import { JavaScriptLanguageGenerator } from '../../src/cli/codegen/languages';
-import { CodeGenerator } from '../../src/cli/codegen/codeGenerator';
+import type { Source } from '../../src/server/supplements/recorder/recorderTypes';
 
 type WorkerFixtures = {
   browserType: BrowserType<Browser>;
@@ -33,30 +29,16 @@ type WorkerFixtures = {
 };
 
 type TestFixtures = {
-  contextWrapper: { context: BrowserContext, output: WritableBuffer };
   recorder: Recorder;
   runCLI: (args: string[]) => CLIMock;
 };
 
 export const fixtures = baseFolio.extend<TestFixtures, WorkerFixtures>();
 
-fixtures.contextWrapper.init(async ({ browser }, runTest) => {
-  const context = await browser.newContext();
-  const outputBuffer = new WritableBuffer();
-  const output = new TerminalOutput(outputBuffer as any as Writable, 'javascript');
-  const languageGenerator = new JavaScriptLanguageGenerator();
-  const generator = new CodeGenerator('chromium', {}, {}, output, languageGenerator, undefined, undefined);
-  new RecorderController(context, generator);
-  await runTest({ context, output: outputBuffer });
-  await context.close();
-});
-
-fixtures.recorder.init(async ({ contextWrapper }, runTest) => {
-  const page = await contextWrapper.context.newPage();
-  if (process.env.PWCONSOLE)
-    page.on('console', console.log);
-  await runTest(new Recorder(page, contextWrapper.output));
-  await page.close();
+fixtures.recorder.init(async ({ page, recorderPageGetter }, runTest) => {
+  await (page.context() as any)._enableRecorder({ language: 'javascript', startRecording: true });
+  const recorderPage = await recorderPageGetter();
+  await runTest(new Recorder(page, recorderPage));
 });
 
 fixtures.httpServer.init(async ({testWorkerIndex}, runTest) => {
@@ -70,11 +52,6 @@ fixtures.httpServer.init(async ({testWorkerIndex}, runTest) => {
   server.close();
 }, { scope: 'worker' });
 
-
-fixtures.page.override(async ({ recorder }, runTest) => {
-  await runTest(recorder.page);
-});
-
 function removeAnsiColors(input: string): string {
   const pattern = [
     '[\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)',
@@ -83,82 +60,64 @@ function removeAnsiColors(input: string): string {
   return input.replace(new RegExp(pattern, 'g'), '');
 }
 
-class WritableBuffer {
-  _data: string;
-  private _callback: () => void;
-  _text: string;
-
-  constructor() {
-    this._data = '';
-  }
-
-  write(chunk: string) {
-    if (!chunk)
-      return;
-    if (chunk === '\u001B[F\u001B[2K') {
-      const index = this._data.lastIndexOf('\n');
-      this._data = this._data.substring(0, index);
-      return;
-    }
-    this._data += chunk;
-    if (this._callback && chunk.includes(this._text))
-      this._callback();
-  }
-
-  _waitFor(text: string): Promise<void> {
-    if (this._data.includes(text))
-      return Promise.resolve();
-    this._text = text;
-    return new Promise(f => this._callback = f);
-  }
-
-  data() {
-    return this._data;
-  }
-
-  text() {
-    return removeAnsiColors(this.data());
-  }
-}
-
 class Recorder {
   page: Page;
-  _output: WritableBuffer;
   _highlightCallback: Function
   _highlightInstalled: boolean
   _actionReporterInstalled: boolean
   _actionPerformedCallback: Function
+  recorderPage: Page;
+  private _sources = new Map<string, Source>();
 
-  constructor(page: Page, output: WritableBuffer) {
+  constructor(page: Page, recorderPage: Page) {
     this.page = page;
-    this._output = output;
+    this.recorderPage = recorderPage;
     this._highlightCallback = () => { };
     this._highlightInstalled = false;
     this._actionReporterInstalled = false;
     this._actionPerformedCallback = () => { };
   }
 
-  async setContentAndWait(content: string, url: string = 'about:blank') {
-    await this.setPageContentAndWait(this.page, content, url);
+  async setContentAndWait(content: string, url: string = 'about:blank', frameCount: number = 1) {
+    await this.setPageContentAndWait(this.page, content, url, frameCount);
   }
 
-  async setPageContentAndWait(page: Page, content: string, url: string = 'about:blank') {
+  async setPageContentAndWait(page: Page, content: string, url: string = 'about:blank', frameCount: number = 1) {
     let callback;
     const result = new Promise(f => callback = f);
     await page.goto(url);
-    await page.exposeBinding('_recorderScriptReadyForTest', (source, arg) => callback(arg));
+    const frames = new Set<any>();
+    await page.exposeBinding('_recorderScriptReadyForTest', (source, arg) => {
+      frames.add(source.frame);
+      if (frames.size === frameCount)
+        callback(arg);
+    });
     await Promise.all([
       result,
       page.setContent(content)
     ]);
   }
 
-  async waitForOutput(text: string): Promise<void> {
-    await this._output._waitFor(text);
+  async waitForOutput(file: string, text: string): Promise<Map<string, Source>> {
+    const sources: Source[] = await this.recorderPage.evaluate((params: { text: string, file: string }) => {
+      const w = window as any;
+      return new Promise(f => {
+        const poll = () => {
+          const source = (w.playwrightSourcesEchoForTest || []).find((s: Source) => s.file === params.file);
+          if (source && source.text.includes(params.text))
+            f(w.playwrightSourcesEchoForTest);
+          setTimeout(poll, 300);
+        };
+        poll();
+      });
+    }, { text, file });
+    for (const source of sources)
+      this._sources.set(source.file, source);
+    return this._sources;
   }
 
-  output(): string {
-    return this._output.text();
+  sources(): Map<string, Source> {
+    return this._sources;
   }
 
   async waitForHighlight(action: () => Promise<void>): Promise<string> {
@@ -190,10 +149,10 @@ class Recorder {
   }
 }
 
-fixtures.runCLI.init(async ({  }, runTest) => {
+fixtures.runCLI.init(async ({ browserName, headful }, runTest) => {
   let cli: CLIMock;
   const cliFactory = (args: string[]) => {
-    cli = new CLIMock(args);
+    cli = new CLIMock(browserName, !headful, args);
     return cli;
   };
   await runTest(cliFactory);
@@ -207,15 +166,17 @@ class CLIMock {
   private waitForCallback: () => void;
   exited: Promise<void>;
 
-  constructor(args: string[]) {
+  constructor(browserName: string, headless: boolean, args: string[]) {
     this.data = '';
     this.process = spawn('node', [
       path.join(__dirname, '..', '..', 'lib', 'cli', 'cli.js'),
+      `--browser=${browserName}`,
       ...args
     ], {
       env: {
         ...process.env,
-        PWCLI_EXIT_FOR_TEST: '1'
+        PWCLI_EXIT_FOR_TEST: '1',
+        PWCLI_HEADLESS_FOR_TEST: headless ? '1' : undefined,
       },
       stdio: 'pipe'
     });

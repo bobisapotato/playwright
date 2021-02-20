@@ -23,8 +23,25 @@ export type Binary = string;
 export interface Channel extends EventEmitter {
 }
 
+export type StackFrame = {
+  file: string,
+  line?: number,
+  column?: number,
+  function?: string,
+};
+
 export type Metadata = {
-  stack?: string,
+  stack?: StackFrame[],
+  apiName?: string,
+};
+
+export type WaitForEventInfo = {
+  waitId: string,
+  phase: 'before' | 'after' | 'log',
+  name?: string,
+  stack?: StackFrame[],
+  message?: string,
+  error?: string,
 };
 
 export type Point = {
@@ -197,6 +214,7 @@ export type BrowserTypeInitializer = {
 export interface BrowserTypeChannel extends Channel {
   launch(params: BrowserTypeLaunchParams, metadata?: Metadata): Promise<BrowserTypeLaunchResult>;
   launchPersistentContext(params: BrowserTypeLaunchPersistentContextParams, metadata?: Metadata): Promise<BrowserTypeLaunchPersistentContextResult>;
+  connectOverCDP(params: BrowserTypeConnectOverCDPParams, metadata?: Metadata): Promise<BrowserTypeConnectOverCDPResult>;
 }
 export type BrowserTypeLaunchParams = {
   executablePath?: string,
@@ -249,6 +267,7 @@ export type BrowserTypeLaunchResult = {
 };
 export type BrowserTypeLaunchPersistentContextParams = {
   userDataDir: string,
+  sdkLanguage: string,
   executablePath?: string,
   args?: string[],
   ignoreAllDefaultArgs?: boolean,
@@ -298,6 +317,7 @@ export type BrowserTypeLaunchPersistentContextParams = {
   colorScheme?: 'light' | 'dark' | 'no-preference',
   acceptDownloads?: boolean,
   _traceDir?: string,
+  _debugName?: string,
   recordVideo?: {
     dir: string,
     size?: {
@@ -360,6 +380,7 @@ export type BrowserTypeLaunchPersistentContextOptions = {
   colorScheme?: 'light' | 'dark' | 'no-preference',
   acceptDownloads?: boolean,
   _traceDir?: string,
+  _debugName?: string,
   recordVideo?: {
     dir: string,
     size?: {
@@ -374,6 +395,20 @@ export type BrowserTypeLaunchPersistentContextOptions = {
 };
 export type BrowserTypeLaunchPersistentContextResult = {
   context: BrowserContextChannel,
+};
+export type BrowserTypeConnectOverCDPParams = {
+  sdkLanguage: string,
+  wsEndpoint: string,
+  slowMo?: number,
+  timeout?: number,
+};
+export type BrowserTypeConnectOverCDPOptions = {
+  slowMo?: number,
+  timeout?: number,
+};
+export type BrowserTypeConnectOverCDPResult = {
+  browser: BrowserChannel,
+  defaultContext?: BrowserContextChannel,
 };
 
 // ----------- Browser -----------
@@ -394,6 +429,7 @@ export type BrowserCloseParams = {};
 export type BrowserCloseOptions = {};
 export type BrowserCloseResult = void;
 export type BrowserNewContextParams = {
+  sdkLanguage: string,
   noDefaultViewport?: boolean,
   viewport?: {
     width: number,
@@ -423,6 +459,7 @@ export type BrowserNewContextParams = {
   colorScheme?: 'dark' | 'light' | 'no-preference',
   acceptDownloads?: boolean,
   _traceDir?: string,
+  _debugName?: string,
   recordVideo?: {
     dir: string,
     size?: {
@@ -475,6 +512,7 @@ export type BrowserNewContextOptions = {
   colorScheme?: 'dark' | 'light' | 'no-preference',
   acceptDownloads?: boolean,
   _traceDir?: string,
+  _debugName?: string,
   recordVideo?: {
     dir: string,
     size?: {
@@ -552,7 +590,8 @@ export interface BrowserContextChannel extends Channel {
   setNetworkInterceptionEnabled(params: BrowserContextSetNetworkInterceptionEnabledParams, metadata?: Metadata): Promise<BrowserContextSetNetworkInterceptionEnabledResult>;
   setOffline(params: BrowserContextSetOfflineParams, metadata?: Metadata): Promise<BrowserContextSetOfflineResult>;
   storageState(params?: BrowserContextStorageStateParams, metadata?: Metadata): Promise<BrowserContextStorageStateResult>;
-  extendInjectedScript(params: BrowserContextExtendInjectedScriptParams, metadata?: Metadata): Promise<BrowserContextExtendInjectedScriptResult>;
+  pause(params?: BrowserContextPauseParams, metadata?: Metadata): Promise<BrowserContextPauseResult>;
+  recorderSupplementEnable(params: BrowserContextRecorderSupplementEnableParams, metadata?: Metadata): Promise<BrowserContextRecorderSupplementEnableResult>;
   crNewCDPSession(params: BrowserContextCrNewCDPSessionParams, metadata?: Metadata): Promise<BrowserContextCrNewCDPSessionResult>;
 }
 export type BrowserContextBindingCallEvent = {
@@ -694,14 +733,30 @@ export type BrowserContextStorageStateResult = {
   cookies: NetworkCookie[],
   origins: OriginStorage[],
 };
-export type BrowserContextExtendInjectedScriptParams = {
-  source: string,
-  arg: SerializedArgument,
+export type BrowserContextPauseParams = {};
+export type BrowserContextPauseOptions = {};
+export type BrowserContextPauseResult = void;
+export type BrowserContextRecorderSupplementEnableParams = {
+  language?: string,
+  startRecording?: boolean,
+  pauseOnNextStatement?: boolean,
+  launchOptions?: any,
+  contextOptions?: any,
+  device?: string,
+  saveStorage?: string,
+  outputFile?: string,
 };
-export type BrowserContextExtendInjectedScriptOptions = {
-
+export type BrowserContextRecorderSupplementEnableOptions = {
+  language?: string,
+  startRecording?: boolean,
+  pauseOnNextStatement?: boolean,
+  launchOptions?: any,
+  contextOptions?: any,
+  device?: string,
+  saveStorage?: string,
+  outputFile?: string,
 };
-export type BrowserContextExtendInjectedScriptResult = void;
+export type BrowserContextRecorderSupplementEnableResult = void;
 export type BrowserContextCrNewCDPSessionParams = {
   page: PageChannel,
 };
@@ -770,7 +825,6 @@ export interface PageChannel extends Channel {
   mouseClick(params: PageMouseClickParams, metadata?: Metadata): Promise<PageMouseClickResult>;
   touchscreenTap(params: PageTouchscreenTapParams, metadata?: Metadata): Promise<PageTouchscreenTapResult>;
   accessibilitySnapshot(params: PageAccessibilitySnapshotParams, metadata?: Metadata): Promise<PageAccessibilitySnapshotResult>;
-  pause(params?: PagePauseParams, metadata?: Metadata): Promise<PagePauseResult>;
   pdf(params: PagePdfParams, metadata?: Metadata): Promise<PagePdfResult>;
   crStartJSCoverage(params: PageCrStartJSCoverageParams, metadata?: Metadata): Promise<PageCrStartJSCoverageResult>;
   crStopJSCoverage(params?: PageCrStopJSCoverageParams, metadata?: Metadata): Promise<PageCrStopJSCoverageResult>;
@@ -1067,9 +1121,6 @@ export type PageAccessibilitySnapshotOptions = {
 export type PageAccessibilitySnapshotResult = {
   rootAXNode?: AXNode,
 };
-export type PagePauseParams = {};
-export type PagePauseOptions = {};
-export type PagePauseResult = void;
 export type PagePdfParams = {
   scale?: number,
   displayHeaderFooter?: boolean,
@@ -1225,11 +1276,11 @@ export type FrameNavigatedEvent = {
 export type FrameEvalOnSelectorParams = {
   selector: string,
   expression: string,
-  isFunction: boolean,
+  isFunction?: boolean,
   arg: SerializedArgument,
 };
 export type FrameEvalOnSelectorOptions = {
-
+  isFunction?: boolean,
 };
 export type FrameEvalOnSelectorResult = {
   value: SerializedValue,
@@ -1237,11 +1288,11 @@ export type FrameEvalOnSelectorResult = {
 export type FrameEvalOnSelectorAllParams = {
   selector: string,
   expression: string,
-  isFunction: boolean,
+  isFunction?: boolean,
   arg: SerializedArgument,
 };
 export type FrameEvalOnSelectorAllOptions = {
-
+  isFunction?: boolean,
 };
 export type FrameEvalOnSelectorAllResult = {
   value: SerializedValue,
@@ -1341,11 +1392,12 @@ export type FrameDispatchEventOptions = {
 export type FrameDispatchEventResult = void;
 export type FrameEvaluateExpressionParams = {
   expression: string,
-  isFunction: boolean,
+  isFunction?: boolean,
   arg: SerializedArgument,
   world?: 'main' | 'utility',
 };
 export type FrameEvaluateExpressionOptions = {
+  isFunction?: boolean,
   world?: 'main' | 'utility',
 };
 export type FrameEvaluateExpressionResult = {
@@ -1353,11 +1405,12 @@ export type FrameEvaluateExpressionResult = {
 };
 export type FrameEvaluateExpressionHandleParams = {
   expression: string,
-  isFunction: boolean,
+  isFunction?: boolean,
   arg: SerializedArgument,
   world?: 'main' | 'utility',
 };
 export type FrameEvaluateExpressionHandleOptions = {
+  isFunction?: boolean,
   world?: 'main' | 'utility',
 };
 export type FrameEvaluateExpressionHandleResult = {
@@ -1644,12 +1697,13 @@ export type FrameUncheckOptions = {
 export type FrameUncheckResult = void;
 export type FrameWaitForFunctionParams = {
   expression: string,
-  isFunction: boolean,
+  isFunction?: boolean,
   arg: SerializedArgument,
   timeout?: number,
   pollingInterval?: number,
 };
 export type FrameWaitForFunctionOptions = {
+  isFunction?: boolean,
   timeout?: number,
   pollingInterval?: number,
 };
@@ -1681,22 +1735,22 @@ export interface WorkerChannel extends Channel {
 export type WorkerCloseEvent = {};
 export type WorkerEvaluateExpressionParams = {
   expression: string,
-  isFunction: boolean,
+  isFunction?: boolean,
   arg: SerializedArgument,
 };
 export type WorkerEvaluateExpressionOptions = {
-
+  isFunction?: boolean,
 };
 export type WorkerEvaluateExpressionResult = {
   value: SerializedValue,
 };
 export type WorkerEvaluateExpressionHandleParams = {
   expression: string,
-  isFunction: boolean,
+  isFunction?: boolean,
   arg: SerializedArgument,
 };
 export type WorkerEvaluateExpressionHandleOptions = {
-
+  isFunction?: boolean,
 };
 export type WorkerEvaluateExpressionHandleResult = {
   handle: JSHandleChannel,
@@ -1723,22 +1777,22 @@ export type JSHandleDisposeOptions = {};
 export type JSHandleDisposeResult = void;
 export type JSHandleEvaluateExpressionParams = {
   expression: string,
-  isFunction: boolean,
+  isFunction?: boolean,
   arg: SerializedArgument,
 };
 export type JSHandleEvaluateExpressionOptions = {
-
+  isFunction?: boolean,
 };
 export type JSHandleEvaluateExpressionResult = {
   value: SerializedValue,
 };
 export type JSHandleEvaluateExpressionHandleParams = {
   expression: string,
-  isFunction: boolean,
+  isFunction?: boolean,
   arg: SerializedArgument,
 };
 export type JSHandleEvaluateExpressionHandleOptions = {
-
+  isFunction?: boolean,
 };
 export type JSHandleEvaluateExpressionHandleResult = {
   handle: JSHandleChannel,
@@ -1808,11 +1862,11 @@ export interface ElementHandleChannel extends JSHandleChannel {
 export type ElementHandleEvalOnSelectorParams = {
   selector: string,
   expression: string,
-  isFunction: boolean,
+  isFunction?: boolean,
   arg: SerializedArgument,
 };
 export type ElementHandleEvalOnSelectorOptions = {
-
+  isFunction?: boolean,
 };
 export type ElementHandleEvalOnSelectorResult = {
   value: SerializedValue,
@@ -1820,11 +1874,11 @@ export type ElementHandleEvalOnSelectorResult = {
 export type ElementHandleEvalOnSelectorAllParams = {
   selector: string,
   expression: string,
-  isFunction: boolean,
+  isFunction?: boolean,
   arg: SerializedArgument,
 };
 export type ElementHandleEvalOnSelectorAllOptions = {
-
+  isFunction?: boolean,
 };
 export type ElementHandleEvalOnSelectorAllResult = {
   value: SerializedValue,
@@ -2426,22 +2480,18 @@ export interface ElectronChannel extends Channel {
   launch(params: ElectronLaunchParams, metadata?: Metadata): Promise<ElectronLaunchResult>;
 }
 export type ElectronLaunchParams = {
-  executablePath: string,
+  sdkLanguage: string,
+  executablePath?: string,
   args?: string[],
   cwd?: string,
   env?: NameValue[],
-  handleSIGINT?: boolean,
-  handleSIGTERM?: boolean,
-  handleSIGHUP?: boolean,
   timeout?: number,
 };
 export type ElectronLaunchOptions = {
+  executablePath?: string,
   args?: string[],
   cwd?: string,
   env?: NameValue[],
-  handleSIGINT?: boolean,
-  handleSIGTERM?: boolean,
-  handleSIGHUP?: boolean,
   timeout?: number,
 };
 export type ElectronLaunchResult = {
@@ -2454,7 +2504,6 @@ export interface ElectronApplicationChannel extends Channel {
   on(event: 'context', callback: (params: ElectronApplicationContextEvent) => void): this;
   on(event: 'close', callback: (params: ElectronApplicationCloseEvent) => void): this;
   on(event: 'window', callback: (params: ElectronApplicationWindowEvent) => void): this;
-  newBrowserWindow(params: ElectronApplicationNewBrowserWindowParams, metadata?: Metadata): Promise<ElectronApplicationNewBrowserWindowResult>;
   evaluateExpression(params: ElectronApplicationEvaluateExpressionParams, metadata?: Metadata): Promise<ElectronApplicationEvaluateExpressionResult>;
   evaluateExpressionHandle(params: ElectronApplicationEvaluateExpressionHandleParams, metadata?: Metadata): Promise<ElectronApplicationEvaluateExpressionHandleResult>;
   close(params?: ElectronApplicationCloseParams, metadata?: Metadata): Promise<ElectronApplicationCloseResult>;
@@ -2467,33 +2516,24 @@ export type ElectronApplicationWindowEvent = {
   page: PageChannel,
   browserWindow: JSHandleChannel,
 };
-export type ElectronApplicationNewBrowserWindowParams = {
-  arg: SerializedArgument,
-};
-export type ElectronApplicationNewBrowserWindowOptions = {
-
-};
-export type ElectronApplicationNewBrowserWindowResult = {
-  page: PageChannel,
-};
 export type ElectronApplicationEvaluateExpressionParams = {
   expression: string,
-  isFunction: boolean,
+  isFunction?: boolean,
   arg: SerializedArgument,
 };
 export type ElectronApplicationEvaluateExpressionOptions = {
-
+  isFunction?: boolean,
 };
 export type ElectronApplicationEvaluateExpressionResult = {
   value: SerializedValue,
 };
 export type ElectronApplicationEvaluateExpressionHandleParams = {
   expression: string,
-  isFunction: boolean,
+  isFunction?: boolean,
   arg: SerializedArgument,
 };
 export type ElectronApplicationEvaluateExpressionHandleOptions = {
-
+  isFunction?: boolean,
 };
 export type ElectronApplicationEvaluateExpressionHandleResult = {
   handle: JSHandleChannel,
@@ -2563,7 +2603,6 @@ export interface AndroidDeviceChannel extends Channel {
   scroll(params: AndroidDeviceScrollParams, metadata?: Metadata): Promise<AndroidDeviceScrollResult>;
   swipe(params: AndroidDeviceSwipeParams, metadata?: Metadata): Promise<AndroidDeviceSwipeResult>;
   info(params: AndroidDeviceInfoParams, metadata?: Metadata): Promise<AndroidDeviceInfoResult>;
-  tree(params?: AndroidDeviceTreeParams, metadata?: Metadata): Promise<AndroidDeviceTreeResult>;
   screenshot(params?: AndroidDeviceScreenshotParams, metadata?: Metadata): Promise<AndroidDeviceScreenshotResult>;
   inputType(params: AndroidDeviceInputTypeParams, metadata?: Metadata): Promise<AndroidDeviceInputTypeResult>;
   inputPress(params: AndroidDeviceInputPressParams, metadata?: Metadata): Promise<AndroidDeviceInputPressResult>;
@@ -2699,11 +2738,6 @@ export type AndroidDeviceInfoOptions = {
 export type AndroidDeviceInfoResult = {
   info: AndroidElementInfo,
 };
-export type AndroidDeviceTreeParams = {};
-export type AndroidDeviceTreeOptions = {};
-export type AndroidDeviceTreeResult = {
-  tree: AndroidElementInfo,
-};
 export type AndroidDeviceScreenshotParams = {};
 export type AndroidDeviceScreenshotOptions = {};
 export type AndroidDeviceScreenshotResult = {
@@ -2748,6 +2782,7 @@ export type AndroidDeviceInputDragOptions = {
 };
 export type AndroidDeviceInputDragResult = void;
 export type AndroidDeviceLaunchBrowserParams = {
+  sdkLanguage: string,
   pkg?: string,
   ignoreHTTPSErrors?: boolean,
   javaScriptEnabled?: boolean,
@@ -2773,6 +2808,7 @@ export type AndroidDeviceLaunchBrowserParams = {
   colorScheme?: 'dark' | 'light' | 'no-preference',
   acceptDownloads?: boolean,
   _traceDir?: string,
+  _debugName?: string,
   recordVideo?: {
     dir: string,
     size?: {
@@ -2817,6 +2853,7 @@ export type AndroidDeviceLaunchBrowserOptions = {
   colorScheme?: 'dark' | 'light' | 'no-preference',
   acceptDownloads?: boolean,
   _traceDir?: string,
+  _debugName?: string,
   recordVideo?: {
     dir: string,
     size?: {
@@ -2881,6 +2918,7 @@ export type AndroidDeviceSetDefaultTimeoutNoReplyOptions = {
 };
 export type AndroidDeviceSetDefaultTimeoutNoReplyResult = void;
 export type AndroidDeviceConnectToWebViewParams = {
+  sdkLanguage: string,
   pid: number,
 };
 export type AndroidDeviceConnectToWebViewOptions = {

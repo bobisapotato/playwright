@@ -18,21 +18,18 @@
 
 /* eslint-disable no-console */
 
-import * as path from 'path';
-import * as program from 'commander';
-import * as os from 'os';
-import * as fs from 'fs';
-import * as consoleApiSource from '../generated/consoleApiSource';
-import { OutputMultiplexer, TerminalOutput, FileOutput } from './codegen/outputs';
-import { CodeGenerator, CodeGeneratorOutput } from './codegen/codeGenerator';
-import { JavaScriptLanguageGenerator, LanguageGenerator } from './codegen/languages';
-import { PythonLanguageGenerator } from './codegen/languages/python';
-import { CSharpLanguageGenerator } from './codegen/languages/csharp';
-import { RecorderController } from './codegen/recorderController';
+import path from 'path';
+import program from 'commander';
+import os from 'os';
+import fs from 'fs';
 import { runServer, printApiJson, installBrowsers } from './driver';
 import { showTraceViewer } from './traceViewer/traceViewer';
-import type { Browser, BrowserContext, Page, BrowserType, BrowserContextOptions, LaunchOptions } from '../..';
 import * as playwright from '../..';
+import { BrowserContext } from '../client/browserContext';
+import { Browser } from '../client/browser';
+import { Page } from '../client/page';
+import { BrowserType } from '../client/browserType';
+import { BrowserContextOptions, LaunchOptions } from '../client/types';
 
 program
     .version('Version ' + require('../../package.json').version)
@@ -54,7 +51,7 @@ program
     .command('open [url]')
     .description('open page in browser specified via -b, --browser')
     .action(function(url, command) {
-      open(command.parent, url);
+      open(command.parent, url, language());
     }).on('--help', function() {
       console.log('');
       console.log('Examples:');
@@ -73,8 +70,9 @@ for (const {alias, name, type} of browsers) {
   program
       .command(`${alias} [url]`)
       .description(`open page in ${name}`)
+      .option('--target <language>', `language to use, one of javascript, python, python-async, csharp`, language())
       .action(function(url, command) {
-        open({ ...command.parent, browser: type }, url);
+        open({ ...command.parent, browser: type }, url, command.target);
       }).on('--help', function() {
         console.log('');
         console.log('Examples:');
@@ -87,7 +85,7 @@ program
     .command('codegen [url]')
     .description('open page and generate code for user actions')
     .option('-o, --output <file name>', 'saves the generated script to a file')
-    .option('--target <language>', `language to use, one of javascript, python, python-async, csharp`, process.env.PW_CLI_TARGET_LANG || 'javascript')
+    .option('--target <language>', `language to use, one of javascript, python, python-async, csharp`, language())
     .action(function(url, command) {
       codegen(command.parent, url, command.target, command.output);
     }).on('--help', function() {
@@ -132,6 +130,13 @@ program
     .command('install [browserType...]')
     .description('Ensure browsers necessary for this version of Playwright are installed')
     .action(function(browserType) {
+      const allBrowsers = new Set(['chromium', 'firefox', 'webkit']);
+      for (const type of browserType) {
+        if (!allBrowsers.has(type)) {
+          console.log(`Invalid browser name: '${type}'. Expecting 'chromium', 'firefox' or 'webkit'.`);
+          process.exit(1);
+        }
+      }
       installBrowsers(browserType.length ? browserType : undefined).catch((e: any) => {
         console.log(`Failed to install browsers\n${e}`);
         process.exit(1);
@@ -205,6 +210,8 @@ async function launchContext(options: Options, headless: boolean): Promise<{ bro
   if (contextOptions.isMobile && browserType.name() === 'firefox')
     contextOptions.isMobile = undefined;
 
+  if (process.env.PWTRACE)
+    (contextOptions as any)._traceDir = path.join(process.cwd(), '.trace');
 
   // Proxy
 
@@ -285,6 +292,7 @@ async function launchContext(options: Options, headless: boolean): Promise<{ bro
   }
 
   context.on('page', page => {
+    page.on('dialog', () => {});  // Prevent dialogs from being automatically dismissed.
     page.on('close', () => {
       const hasPage = browser.contexts().some(context => context.pages().length > 0);
       if (hasPage)
@@ -316,38 +324,33 @@ async function openPage(context: BrowserContext, url: string | undefined): Promi
   return page;
 }
 
-async function open(options: Options, url: string | undefined) {
-  const { context } = await launchContext(options, false);
-  (context as any)._extendInjectedScript(consoleApiSource.source);
+async function open(options: Options, url: string | undefined, language: string) {
+  const { context, launchOptions, contextOptions } = await launchContext(options, !!process.env.PWCLI_HEADLESS_FOR_TEST);
+  await context._enableRecorder({
+    language,
+    launchOptions,
+    contextOptions,
+    device: options.device,
+    saveStorage: options.saveStorage,
+  });
   await openPage(context, url);
   if (process.env.PWCLI_EXIT_FOR_TEST)
     await Promise.all(context.pages().map(p => p.close()));
 }
 
-async function codegen(options: Options, url: string | undefined, target: string, outputFile?: string) {
-  let languageGenerator: LanguageGenerator;
-
-  switch (target) {
-    case 'javascript': languageGenerator = new JavaScriptLanguageGenerator(); break;
-    case 'csharp': languageGenerator = new CSharpLanguageGenerator(); break;
-    case 'python':
-    case 'python-async': languageGenerator = new PythonLanguageGenerator(target === 'python-async'); break;
-    default: throw new Error(`Invalid target: '${target}'`);
-  }
-
-  const { context, browserName, launchOptions, contextOptions } = await launchContext(options, false);
-
+async function codegen(options: Options, url: string | undefined, language: string, outputFile?: string) {
+  const { context, launchOptions, contextOptions } = await launchContext(options, !!process.env.PWCLI_HEADLESS_FOR_TEST);
   if (process.env.PWTRACE)
-    (contextOptions as any)._traceDir = path.join(process.cwd(), '.trace');
-
-  const outputs: CodeGeneratorOutput[] = [TerminalOutput.create(process.stdout, languageGenerator.highlighterType())];
-  if (outputFile)
-    outputs.push(new FileOutput(outputFile));
-  const output = new OutputMultiplexer(outputs);
-
-  const generator = new CodeGenerator(browserName, launchOptions, contextOptions, output, languageGenerator, options.device, options.saveStorage);
-  new RecorderController(context, generator);
-  (context as any)._extendInjectedScript(consoleApiSource.source);
+    contextOptions._traceDir = path.join(process.cwd(), '.trace');
+  await context._enableRecorder({
+    language,
+    launchOptions,
+    contextOptions,
+    device: options.device,
+    saveStorage: options.saveStorage,
+    startRecording: true,
+    outputFile: outputFile ? path.resolve(outputFile) : undefined
+  });
   await openPage(context, url);
   if (process.env.PWCLI_EXIT_FOR_TEST)
     await Promise.all(context.pages().map(p => p.close()));
@@ -388,20 +391,23 @@ async function pdf(options: Options, captureOptions: CaptureOptions, url: string
   await browser.close();
 }
 
-function lookupBrowserType(options: Options): BrowserType<Browser> {
+function lookupBrowserType(options: Options): BrowserType {
   let name = options.browser;
   if (options.device) {
     const device = playwright.devices[options.device];
     name = device.defaultBrowserType;
   }
+  let browserType: any;
   switch (name) {
-    case 'chromium': return playwright.chromium!;
-    case 'webkit': return playwright.webkit!;
-    case 'firefox': return playwright.firefox!;
-    case 'cr': return playwright.chromium!;
-    case 'wk': return playwright.webkit!;
-    case 'ff': return playwright.firefox!;
+    case 'chromium': browserType = playwright.chromium; break;
+    case 'webkit': browserType = playwright.webkit; break;
+    case 'firefox': browserType = playwright.firefox; break;
+    case 'cr': browserType = playwright.chromium; break;
+    case 'wk': browserType = playwright.webkit; break;
+    case 'ff': browserType = playwright.firefox; break;
   }
+  if (browserType)
+    return browserType;
   program.help();
 }
 
@@ -416,4 +422,8 @@ function validateOptions(options: Options) {
     console.log('Invalid color scheme, should be one of "light", "dark"');
     process.exit(0);
   }
+}
+
+function language(): string {
+  return process.env.PW_CLI_TARGET_LANG || 'javascript';
 }

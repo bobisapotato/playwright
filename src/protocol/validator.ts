@@ -33,8 +33,23 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
     };
   };
 
+  scheme.StackFrame = tObject({
+    file: tString,
+    line: tOptional(tNumber),
+    column: tOptional(tNumber),
+    function: tOptional(tString),
+  });
   scheme.Metadata = tObject({
-    stack: tOptional(tString),
+    stack: tOptional(tArray(tType('StackFrame'))),
+    apiName: tOptional(tString),
+  });
+  scheme.WaitForEventInfo = tObject({
+    waitId: tString,
+    phase: tEnum(['before', 'after', 'log']),
+    name: tOptional(tString),
+    stack: tOptional(tArray(tType('StackFrame'))),
+    message: tOptional(tString),
+    error: tOptional(tString),
   });
   scheme.Point = tObject({
     x: tNumber,
@@ -163,6 +178,7 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
   });
   scheme.BrowserTypeLaunchPersistentContextParams = tObject({
     userDataDir: tString,
+    sdkLanguage: tString,
     executablePath: tOptional(tString),
     args: tOptional(tArray(tString)),
     ignoreAllDefaultArgs: tOptional(tBoolean),
@@ -212,6 +228,7 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
     colorScheme: tOptional(tEnum(['light', 'dark', 'no-preference'])),
     acceptDownloads: tOptional(tBoolean),
     _traceDir: tOptional(tString),
+    _debugName: tOptional(tString),
     recordVideo: tOptional(tObject({
       dir: tString,
       size: tOptional(tObject({
@@ -224,8 +241,15 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
       path: tString,
     })),
   });
+  scheme.BrowserTypeConnectOverCDPParams = tObject({
+    sdkLanguage: tString,
+    wsEndpoint: tString,
+    slowMo: tOptional(tNumber),
+    timeout: tOptional(tNumber),
+  });
   scheme.BrowserCloseParams = tOptional(tObject({}));
   scheme.BrowserNewContextParams = tObject({
+    sdkLanguage: tString,
     noDefaultViewport: tOptional(tBoolean),
     viewport: tOptional(tObject({
       width: tNumber,
@@ -255,6 +279,7 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
     colorScheme: tOptional(tEnum(['dark', 'light', 'no-preference'])),
     acceptDownloads: tOptional(tBoolean),
     _traceDir: tOptional(tString),
+    _debugName: tOptional(tString),
     recordVideo: tOptional(tObject({
       dir: tString,
       size: tOptional(tObject({
@@ -335,9 +360,16 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
     offline: tBoolean,
   });
   scheme.BrowserContextStorageStateParams = tOptional(tObject({}));
-  scheme.BrowserContextExtendInjectedScriptParams = tObject({
-    source: tString,
-    arg: tType('SerializedArgument'),
+  scheme.BrowserContextPauseParams = tOptional(tObject({}));
+  scheme.BrowserContextRecorderSupplementEnableParams = tObject({
+    language: tOptional(tString),
+    startRecording: tOptional(tBoolean),
+    pauseOnNextStatement: tOptional(tBoolean),
+    launchOptions: tOptional(tAny),
+    contextOptions: tOptional(tAny),
+    device: tOptional(tString),
+    saveStorage: tOptional(tString),
+    outputFile: tOptional(tString),
   });
   scheme.BrowserContextCrNewCDPSessionParams = tObject({
     page: tChannel('Page'),
@@ -443,7 +475,6 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
     interestingOnly: tOptional(tBoolean),
     root: tOptional(tChannel('ElementHandle')),
   });
-  scheme.PagePauseParams = tOptional(tObject({}));
   scheme.PagePdfParams = tObject({
     scale: tOptional(tNumber),
     displayHeaderFooter: tOptional(tBoolean),
@@ -476,13 +507,13 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
   scheme.FrameEvalOnSelectorParams = tObject({
     selector: tString,
     expression: tString,
-    isFunction: tBoolean,
+    isFunction: tOptional(tBoolean),
     arg: tType('SerializedArgument'),
   });
   scheme.FrameEvalOnSelectorAllParams = tObject({
     selector: tString,
     expression: tString,
-    isFunction: tBoolean,
+    isFunction: tOptional(tBoolean),
     arg: tType('SerializedArgument'),
   });
   scheme.FrameAddScriptTagParams = tObject({
@@ -530,13 +561,13 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
   });
   scheme.FrameEvaluateExpressionParams = tObject({
     expression: tString,
-    isFunction: tBoolean,
+    isFunction: tOptional(tBoolean),
     arg: tType('SerializedArgument'),
     world: tOptional(tEnum(['main', 'utility'])),
   });
   scheme.FrameEvaluateExpressionHandleParams = tObject({
     expression: tString,
-    isFunction: tBoolean,
+    isFunction: tOptional(tBoolean),
     arg: tType('SerializedArgument'),
     world: tOptional(tEnum(['main', 'utility'])),
   });
@@ -668,7 +699,7 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
   });
   scheme.FrameWaitForFunctionParams = tObject({
     expression: tString,
-    isFunction: tBoolean,
+    isFunction: tOptional(tBoolean),
     arg: tType('SerializedArgument'),
     timeout: tOptional(tNumber),
     pollingInterval: tOptional(tNumber),
@@ -680,25 +711,25 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
   });
   scheme.WorkerEvaluateExpressionParams = tObject({
     expression: tString,
-    isFunction: tBoolean,
+    isFunction: tOptional(tBoolean),
     arg: tType('SerializedArgument'),
   });
   scheme.WorkerEvaluateExpressionHandleParams = tObject({
     expression: tString,
-    isFunction: tBoolean,
+    isFunction: tOptional(tBoolean),
     arg: tType('SerializedArgument'),
   });
   scheme.JSHandleDisposeParams = tOptional(tObject({}));
   scheme.ElementHandleDisposeParams = tType('JSHandleDisposeParams');
   scheme.JSHandleEvaluateExpressionParams = tObject({
     expression: tString,
-    isFunction: tBoolean,
+    isFunction: tOptional(tBoolean),
     arg: tType('SerializedArgument'),
   });
   scheme.ElementHandleEvaluateExpressionParams = tType('JSHandleEvaluateExpressionParams');
   scheme.JSHandleEvaluateExpressionHandleParams = tObject({
     expression: tString,
-    isFunction: tBoolean,
+    isFunction: tOptional(tBoolean),
     arg: tType('SerializedArgument'),
   });
   scheme.ElementHandleEvaluateExpressionHandleParams = tType('JSHandleEvaluateExpressionHandleParams');
@@ -713,13 +744,13 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
   scheme.ElementHandleEvalOnSelectorParams = tObject({
     selector: tString,
     expression: tString,
-    isFunction: tBoolean,
+    isFunction: tOptional(tBoolean),
     arg: tType('SerializedArgument'),
   });
   scheme.ElementHandleEvalOnSelectorAllParams = tObject({
     selector: tString,
     expression: tString,
-    isFunction: tBoolean,
+    isFunction: tOptional(tBoolean),
     arg: tType('SerializedArgument'),
   });
   scheme.ElementHandleBoundingBoxParams = tOptional(tObject({}));
@@ -903,26 +934,21 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
   });
   scheme.CDPSessionDetachParams = tOptional(tObject({}));
   scheme.ElectronLaunchParams = tObject({
-    executablePath: tString,
+    sdkLanguage: tString,
+    executablePath: tOptional(tString),
     args: tOptional(tArray(tString)),
     cwd: tOptional(tString),
     env: tOptional(tArray(tType('NameValue'))),
-    handleSIGINT: tOptional(tBoolean),
-    handleSIGTERM: tOptional(tBoolean),
-    handleSIGHUP: tOptional(tBoolean),
     timeout: tOptional(tNumber),
-  });
-  scheme.ElectronApplicationNewBrowserWindowParams = tObject({
-    arg: tType('SerializedArgument'),
   });
   scheme.ElectronApplicationEvaluateExpressionParams = tObject({
     expression: tString,
-    isFunction: tBoolean,
+    isFunction: tOptional(tBoolean),
     arg: tType('SerializedArgument'),
   });
   scheme.ElectronApplicationEvaluateExpressionHandleParams = tObject({
     expression: tString,
-    isFunction: tBoolean,
+    isFunction: tOptional(tBoolean),
     arg: tType('SerializedArgument'),
   });
   scheme.ElectronApplicationCloseParams = tOptional(tObject({}));
@@ -994,7 +1020,6 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
   scheme.AndroidDeviceInfoParams = tObject({
     selector: tType('AndroidSelector'),
   });
-  scheme.AndroidDeviceTreeParams = tOptional(tObject({}));
   scheme.AndroidDeviceScreenshotParams = tOptional(tObject({}));
   scheme.AndroidDeviceInputTypeParams = tObject({
     text: tString,
@@ -1015,6 +1040,7 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
     steps: tNumber,
   });
   scheme.AndroidDeviceLaunchBrowserParams = tObject({
+    sdkLanguage: tString,
     pkg: tOptional(tString),
     ignoreHTTPSErrors: tOptional(tBoolean),
     javaScriptEnabled: tOptional(tBoolean),
@@ -1040,6 +1066,7 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
     colorScheme: tOptional(tEnum(['dark', 'light', 'no-preference'])),
     acceptDownloads: tOptional(tBoolean),
     _traceDir: tOptional(tString),
+    _debugName: tOptional(tString),
     recordVideo: tOptional(tObject({
       dir: tString,
       size: tOptional(tObject({
@@ -1077,6 +1104,7 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
     timeout: tNumber,
   });
   scheme.AndroidDeviceConnectToWebViewParams = tObject({
+    sdkLanguage: tString,
     pid: tNumber,
   });
   scheme.AndroidDeviceCloseParams = tOptional(tObject({}));

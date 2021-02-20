@@ -15,17 +15,15 @@
  * limitations under the License.
  */
 
-import * as extract from 'extract-zip';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import * as ProgressBar from 'progress';
+import extract from 'extract-zip';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import ProgressBar from 'progress';
 import { getProxyForUrl } from 'proxy-from-env';
 import * as URL from 'url';
 import * as util from 'util';
-import { assert, getFromENV } from '../utils/utils';
-import * as browserPaths from '../utils/browserPaths';
-import { BrowserName, BrowserPlatform, BrowserDescriptor } from '../utils/browserPaths';
+import { BrowserName, Registry, hostPlatform } from '../utils/registry';
 
 // `https-proxy-agent` v5 is written in Typescript and exposes generated types.
 // However, as of June 2020, its types are generated with tsconfig that enables
@@ -42,113 +40,10 @@ const existsAsync = (path: string): Promise<boolean> => new Promise(resolve => f
 
 export type OnProgressCallback = (downloadedBytes: number, totalBytes: number) => void;
 
-const CHROMIUM_MOVE_TO_AZURE_CDN_REVISION = 792639;
-
-function getDownloadHost(browserName: BrowserName, revision: number): string {
-  // Only old chromium revisions are downloaded from gbucket.
-  const defaultDownloadHost = browserName === 'chromium' && revision < CHROMIUM_MOVE_TO_AZURE_CDN_REVISION ?  'https://storage.googleapis.com' : 'https://playwright.azureedge.net';
-
-  const envDownloadHost: { [key: string]: string } = {
-    chromium: 'PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST',
-    firefox: 'PLAYWRIGHT_FIREFOX_DOWNLOAD_HOST',
-    webkit: 'PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST',
-  };
-  return getFromENV(envDownloadHost[browserName]) ||
-         getFromENV('PLAYWRIGHT_DOWNLOAD_HOST') ||
-         defaultDownloadHost;
-}
-
-function getDownloadUrl(browserName: BrowserName, revision: number, platform: BrowserPlatform): string | undefined {
-  if (browserName === 'chromium') {
-    return revision < CHROMIUM_MOVE_TO_AZURE_CDN_REVISION ?
-      new Map<BrowserPlatform, string>([
-        ['ubuntu18.04', '%s/chromium-browser-snapshots/Linux_x64/%d/chrome-linux.zip'],
-        ['ubuntu20.04', '%s/chromium-browser-snapshots/Linux_x64/%d/chrome-linux.zip'],
-        ['mac10.13', '%s/chromium-browser-snapshots/Mac/%d/chrome-mac.zip'],
-        ['mac10.14', '%s/chromium-browser-snapshots/Mac/%d/chrome-mac.zip'],
-        ['mac10.15', '%s/chromium-browser-snapshots/Mac/%d/chrome-mac.zip'],
-        ['mac11', '%s/chromium-browser-snapshots/Mac/%d/chrome-mac.zip'],
-        ['win32', '%s/chromium-browser-snapshots/Win/%d/chrome-win.zip'],
-        ['win64', '%s/chromium-browser-snapshots/Win_x64/%d/chrome-win.zip'],
-      ]).get(platform) :
-      new Map<BrowserPlatform, string>([
-        ['ubuntu18.04', '%s/builds/chromium/%s/chromium-linux.zip'],
-        ['ubuntu20.04', '%s/builds/chromium/%s/chromium-linux.zip'],
-        ['mac10.13', '%s/builds/chromium/%s/chromium-mac.zip'],
-        ['mac10.14', '%s/builds/chromium/%s/chromium-mac.zip'],
-        ['mac10.15', '%s/builds/chromium/%s/chromium-mac.zip'],
-        ['mac11', '%s/builds/chromium/%s/chromium-mac.zip'],
-        ['mac11-arm64', '%s/builds/chromium/%s/chromium-mac-arm64.zip'],
-        ['win32', '%s/builds/chromium/%s/chromium-win32.zip'],
-        ['win64', '%s/builds/chromium/%s/chromium-win64.zip'],
-      ]).get(platform);
-  }
-
-  if (browserName === 'firefox') {
-    const FIREFOX_NORMALIZE_CDN_NAMES_REVISION = 1140;
-    return revision < FIREFOX_NORMALIZE_CDN_NAMES_REVISION ?
-      new Map<BrowserPlatform, string>([
-        ['ubuntu18.04', '%s/builds/firefox/%s/firefox-linux.zip'],
-        ['ubuntu20.04', '%s/builds/firefox/%s/firefox-linux.zip'],
-        ['mac10.13', '%s/builds/firefox/%s/firefox-mac.zip'],
-        ['mac10.14', '%s/builds/firefox/%s/firefox-mac.zip'],
-        ['mac10.15', '%s/builds/firefox/%s/firefox-mac.zip'],
-        ['mac11', '%s/builds/firefox/%s/firefox-mac.zip'],
-        ['win32', '%s/builds/firefox/%s/firefox-win32.zip'],
-        ['win64', '%s/builds/firefox/%s/firefox-win64.zip'],
-      ]).get(platform) :
-      new Map<BrowserPlatform, string>([
-        ['ubuntu18.04', '%s/builds/firefox/%s/firefox-ubuntu-18.04.zip'],
-        ['ubuntu20.04', '%s/builds/firefox/%s/firefox-ubuntu-18.04.zip'],
-        ['mac10.13', '%s/builds/firefox/%s/firefox-mac-10.14.zip'],
-        ['mac10.14', '%s/builds/firefox/%s/firefox-mac-10.14.zip'],
-        ['mac10.15', '%s/builds/firefox/%s/firefox-mac-10.14.zip'],
-        ['mac11', '%s/builds/firefox/%s/firefox-mac-10.14.zip'],
-        ['mac11-arm64', '%s/builds/firefox/%s/firefox-mac-11.0-arm64.zip'],
-        ['win32', '%s/builds/firefox/%s/firefox-win32.zip'],
-        ['win64', '%s/builds/firefox/%s/firefox-win64.zip'],
-      ]).get(platform);
-  }
-
-  if (browserName === 'webkit') {
-    const WEBKIT_NORMALIZE_CDN_NAMES_REVISION = 1317;
-    return revision < WEBKIT_NORMALIZE_CDN_NAMES_REVISION ?
-      new Map<BrowserPlatform, string | undefined>([
-        ['ubuntu18.04', '%s/builds/webkit/%s/minibrowser-gtk-wpe.zip'],
-        ['ubuntu20.04', '%s/builds/webkit/%s/minibrowser-gtk-wpe.zip'],
-        ['mac10.13', undefined],
-        ['mac10.14', '%s/builds/webkit/%s/minibrowser-mac-10.14.zip'],
-        ['mac10.15', '%s/builds/webkit/%s/minibrowser-mac-10.15.zip'],
-        ['mac11', '%s/builds/webkit/%s/minibrowser-mac-10.15.zip'],
-        ['win32', '%s/builds/webkit/%s/minibrowser-win64.zip'],
-        ['win64', '%s/builds/webkit/%s/minibrowser-win64.zip'],
-      ]).get(platform) :
-      new Map<BrowserPlatform, string | undefined>([
-        ['ubuntu18.04', '%s/builds/webkit/%s/webkit-ubuntu-18.04.zip'],
-        ['ubuntu20.04', '%s/builds/webkit/%s/webkit-ubuntu-20.04.zip'],
-        ['mac10.13', undefined],
-        ['mac10.14', '%s/builds/webkit/%s/webkit-mac-10.14.zip'],
-        ['mac10.15', '%s/builds/webkit/%s/webkit-mac-10.15.zip'],
-        ['mac11', '%s/builds/webkit/%s/webkit-mac-10.15.zip'],
-        ['mac11-arm64', '%s/builds/webkit/%s/webkit-mac-11.0-arm64.zip'],
-        ['win32', '%s/builds/webkit/%s/webkit-win64.zip'],
-        ['win64', '%s/builds/webkit/%s/webkit-win64.zip'],
-      ]).get(platform);
-  }
-}
-
-function revisionURL(browser: BrowserDescriptor, platform = browserPaths.hostPlatform): string {
-  const revision = parseInt(browser.revision, 10);
-  const serverHost = getDownloadHost(browser.name, revision);
-  const urlTemplate = getDownloadUrl(browser.name, revision, platform);
-  assert(urlTemplate, `ERROR: Playwright does not support ${browser.name} on ${platform}`);
-  return util.format(urlTemplate, serverHost, browser.revision);
-}
-
-export async function downloadBrowserWithProgressBar(browsersPath: string, browser: BrowserDescriptor): Promise<boolean> {
-  const browserPath = browserPaths.browserDirectory(browsersPath, browser);
-  const progressBarName = `${browser.name} v${browser.revision}`;
-  if (await existsAsync(browserPath)) {
+export async function downloadBrowserWithProgressBar(registry: Registry, browserName: BrowserName): Promise<boolean> {
+  const browserDirectory = registry.browserDirectory(browserName);
+  const progressBarName = `${browserName} v${registry.revision(browserName)}`;
+  if (await existsAsync(browserDirectory)) {
     // Already downloaded.
     return false;
   }
@@ -170,12 +65,24 @@ export async function downloadBrowserWithProgressBar(browsersPath: string, brows
     progressBar.tick(delta);
   }
 
-  const url = revisionURL(browser);
-  const zipPath = path.join(os.tmpdir(), `playwright-download-${browser.name}-${browserPaths.hostPlatform}-${browser.revision}.zip`);
+  const url = registry.downloadURL(browserName);
+  const zipPath = path.join(os.tmpdir(), `playwright-download-${browserName}-${hostPlatform}-${registry.revision(browserName)}.zip`);
   try {
-    await downloadFile(url, zipPath, progress);
-    await extract(zipPath, { dir: browserPath});
-    await chmodAsync(browserPaths.executablePath(browserPath, browser)!, 0o755);
+    for (let attempt = 1, N = 3; attempt <= N; ++attempt) {
+      const {error} = await downloadFile(url, zipPath, progress);
+      if (!error)
+        break;
+      const errorMessage = typeof error === 'object' && typeof error.message === 'string' ? error.message : '';
+      if (attempt < N && (errorMessage.includes('ECONNRESET') || errorMessage.includes('ETIMEDOUT'))) {
+        // Maximum delay is 3rd retry: 1337.5ms
+        const millis = (Math.random() * 200) + (250 * Math.pow(1.5, attempt));
+        await new Promise(c => setTimeout(c, millis));
+      } else {
+        throw error;
+      }
+    }
+    await extract(zipPath, { dir: browserDirectory});
+    await chmodAsync(registry.executablePath(browserName)!, 0o755);
   } catch (e) {
     process.exitCode = 1;
     throw e;
@@ -183,7 +90,7 @@ export async function downloadBrowserWithProgressBar(browsersPath: string, brows
     if (await existsAsync(zipPath))
       await unlinkAsync(zipPath);
   }
-  logPolitely(`${progressBarName} downloaded to ${browserPath}`);
+  logPolitely(`${progressBarName} downloaded to ${browserDirectory}`);
   return true;
 }
 
@@ -192,31 +99,30 @@ function toMegabytes(bytes: number) {
   return `${Math.round(mb * 10) / 10} Mb`;
 }
 
-function downloadFile(url: string, destinationPath: string, progressCallback: OnProgressCallback | undefined): Promise<any> {
-  let fulfill: () => void = () => {};
-  let reject: (error: any) => void = () => {};
+function downloadFile(url: string, destinationPath: string, progressCallback: OnProgressCallback | undefined): Promise<{error: any}> {
+  let fulfill: ({error}: {error: any}) => void = ({error}) => {};
   let downloadedBytes = 0;
   let totalBytes = 0;
 
-  const promise = new Promise((x, y) => { fulfill = x; reject = y; });
+  const promise: Promise<{error: any}> = new Promise(x => { fulfill = x; });
 
   const request = httpRequest(url, 'GET', response => {
     if (response.statusCode !== 200) {
       const error = new Error(`Download failed: server returned code ${response.statusCode}. URL: ${url}`);
       // consume response data to free up memory
       response.resume();
-      reject(error);
+      fulfill({error});
       return;
     }
     const file = fs.createWriteStream(destinationPath);
-    file.on('finish', () => fulfill());
-    file.on('error', error => reject(error));
+    file.on('finish', () => fulfill({error: null}));
+    file.on('error', error => fulfill({error}));
     response.pipe(file);
     totalBytes = parseInt(response.headers['content-length'], 10);
     if (progressCallback)
       response.on('data', onData);
   });
-  request.on('error', (error: any) => reject(error));
+  request.on('error', (error: any) => fulfill({error}));
   return promise;
 
   function onData(chunk: string) {

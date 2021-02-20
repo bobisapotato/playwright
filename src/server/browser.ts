@@ -17,20 +17,26 @@
 import * as types from './types';
 import { BrowserContext, Video } from './browserContext';
 import { Page } from './page';
-import { EventEmitter } from 'events';
 import { Download } from './download';
 import { ProxySettings } from './types';
 import { ChildProcess } from 'child_process';
 import { RecentLogsCollector } from '../utils/debugLogger';
+import * as registry from '../utils/registry';
+import { SdkObject } from './instrumentation';
 
 export interface BrowserProcess {
-  onclose: ((exitCode: number | null, signal: string | null) => void) | undefined;
+  onclose?: ((exitCode: number | null, signal: string | null) => void);
   process?: ChildProcess;
   kill(): Promise<void>;
   close(): Promise<void>;
 }
 
-export type BrowserOptions = types.UIOptions & {
+export type PlaywrightOptions = {
+  registry: registry.Registry,
+  rootSdkObject: SdkObject,
+};
+
+export type BrowserOptions = PlaywrightOptions & {
   name: string,
   isChromium: boolean,
   downloadsPath?: string,
@@ -40,38 +46,34 @@ export type BrowserOptions = types.UIOptions & {
   proxy?: ProxySettings,
   protocolLogger: types.ProtocolLogger,
   browserLogsCollector: RecentLogsCollector,
+  slowMo?: number;
+  wsEndpoint?: string;  // Only there when connected over web socket.
 };
 
-export abstract class Browser extends EventEmitter {
+export abstract class Browser extends SdkObject {
   static Events = {
     Disconnected: 'disconnected',
   };
 
-  readonly _options: BrowserOptions;
+  readonly options: BrowserOptions;
   private _downloads = new Map<string, Download>();
   _defaultContext: BrowserContext | null = null;
   private _startedClosing = false;
   readonly _idToVideo = new Map<string, Video>();
 
   constructor(options: BrowserOptions) {
-    super();
-    this._options = options;
+    super(options.rootSdkObject);
+    this.attribution.browser = this;
+    this.options = options;
   }
 
-  abstract newContext(options?: types.BrowserContextOptions): Promise<BrowserContext>;
+  abstract newContext(options: types.BrowserContextOptions): Promise<BrowserContext>;
   abstract contexts(): BrowserContext[];
   abstract isConnected(): boolean;
   abstract version(): string;
 
-  async newPage(options?: types.BrowserContextOptions): Promise<Page> {
-    const context = await this.newContext(options);
-    const page = await context.newPage();
-    page._ownedContext = context;
-    return page;
-  }
-
   _downloadCreated(page: Page, uuid: string, url: string, suggestedFilename?: string) {
-    const download = new Download(page, this._options.downloadsPath || '', uuid, url, suggestedFilename);
+    const download = new Download(page, this.options.downloadsPath || '', uuid, url, suggestedFilename);
     this._downloads.set(uuid, download);
   }
 
@@ -117,10 +119,9 @@ export abstract class Browser extends EventEmitter {
   async close() {
     if (!this._startedClosing) {
       this._startedClosing = true;
-      await this._options.browserProcess.close();
+      await this.options.browserProcess.close();
     }
     if (this.isConnected())
       await new Promise(x => this.once(Browser.Events.Disconnected, x));
   }
 }
-

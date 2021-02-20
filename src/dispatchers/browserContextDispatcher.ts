@@ -21,13 +21,14 @@ import * as channels from '../protocol/channels';
 import { RouteDispatcher, RequestDispatcher } from './networkDispatchers';
 import { CRBrowserContext } from '../server/chromium/crBrowser';
 import { CDPSessionDispatcher } from './cdpSessionDispatcher';
-import { parseArgument } from './jsHandleDispatcher';
+import { RecorderSupplement } from '../server/supplements/recorderSupplement';
+import { CallMetadata } from '../server/instrumentation';
 
 export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channels.BrowserContextInitializer> implements channels.BrowserContextChannel {
   private _context: BrowserContext;
 
   constructor(scope: DispatcherScope, context: BrowserContext) {
-    super(scope, context, 'BrowserContext', { isChromium: context._browser._options.isChromium }, true);
+    super(scope, context, 'BrowserContext', { isChromium: context._browser.options.isChromium }, true);
     this._context = context;
 
     for (const page of context.pages())
@@ -38,7 +39,7 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
       this._dispose();
     });
 
-    if (context._browser._options.name === 'chromium') {
+    if (context._browser.options.name === 'chromium') {
       for (const page of (context as CRBrowserContext).backgroundPages())
         this._dispatchEvent('crBackgroundPage', { page: new PageDispatcher(this._scope, page) });
       context.on(CRBrowserContext.CREvents.BackgroundPage, page => this._dispatchEvent('crBackgroundPage', { page: new PageDispatcher(this._scope, page) }));
@@ -64,8 +65,8 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
     });
   }
 
-  async newPage(): Promise<channels.BrowserContextNewPageResult> {
-    return { page: lookupDispatcher<PageDispatcher>(await this._context.newPage()) };
+  async newPage(params: channels.BrowserContextNewPageParams, metadata: CallMetadata): Promise<channels.BrowserContextNewPageResult> {
+    return { page: lookupDispatcher<PageDispatcher>(await this._context.newPage(metadata)) };
   }
 
   async cookies(params: channels.BrowserContextCookiesParams): Promise<channels.BrowserContextCookiesResult> {
@@ -118,20 +119,24 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
     });
   }
 
-  async storageState(): Promise<channels.BrowserContextStorageStateResult> {
-    return await this._context.storageState();
+  async storageState(params: channels.BrowserContextStorageStateParams, metadata: CallMetadata): Promise<channels.BrowserContextStorageStateResult> {
+    return await this._context.storageState(metadata);
   }
 
-  async close(): Promise<void> {
-    await this._context.close();
+  async close(params: channels.BrowserContextCloseParams, metadata: CallMetadata): Promise<void> {
+    await this._context.close(metadata);
   }
 
-  async extendInjectedScript(params: channels.BrowserContextExtendInjectedScriptParams): Promise<void> {
-    await this._context.extendInjectedScript(params.source, parseArgument(params.arg));
+  async recorderSupplementEnable(params: channels.BrowserContextRecorderSupplementEnableParams): Promise<void> {
+    await RecorderSupplement.getOrCreate(this._context, params);
+  }
+
+  async pause(params: channels.BrowserContextPauseParams, metadata: CallMetadata) {
+    // Inspector controller will take care of this.
   }
 
   async crNewCDPSession(params: channels.BrowserContextCrNewCDPSessionParams): Promise<channels.BrowserContextCrNewCDPSessionResult> {
-    if (!this._object._browser._options.isChromium)
+    if (!this._object._browser.options.isChromium)
       throw new Error(`CDP session is only available in Chromium`);
     const crBrowserContext = this._object as CRBrowserContext;
     return { session: new CDPSessionDispatcher(this._scope, await crBrowserContext.newCDPSession((params.page as PageDispatcher)._object)) };

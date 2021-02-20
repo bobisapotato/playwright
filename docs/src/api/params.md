@@ -1,5 +1,5 @@
 ## navigation-wait-until
-- `waitUntil` <"load"|"domcontentloaded"|"networkidle">
+- `waitUntil` <[WaitUntilState]<"load"|"domcontentloaded"|"networkidle">>
 
 When to consider operation succeeded, defaults to `load`. Events can be either:
 * `'domcontentloaded'` - consider operation to be finished when the `DOMContentLoaded` event is fired.
@@ -56,13 +56,13 @@ A point to use relative to the top-left corner of element padding box. If not sp
 element.
 
 ## input-modifiers
-- `modifiers` <[Array]<"Alt"|"Control"|"Meta"|"Shift">>
+- `modifiers` <[Array]<[KeyboardModifier]<"Alt"|"Control"|"Meta"|"Shift">>>
 
 Modifier keys to press. Ensures that only these modifiers are pressed during the operation, and then restores current
 modifiers back. If not specified, currently pressed modifiers are used.
 
 ## input-button
-- `button` <"left"|"right"|"middle">
+- `button` <[MouseButton]<"left"|"right"|"middle">>
 
 Defaults to `left`.
 
@@ -88,7 +88,7 @@ defaults to 1. See [UIEvent.detail].
 A selector to query for. See [working with selectors](./selectors.md) for more details.
 
 ## wait-for-selector-state
-- `state` <"attached"|"detached"|"visible"|"hidden">
+- `state` <[WaitForSelectorState]<"attached"|"detached"|"visible"|"hidden">>
 
 Defaults to `'visible'`. Can be either:
 * `'attached'` - wait for element to be present in DOM.
@@ -98,7 +98,67 @@ Defaults to `'visible'`. Can be either:
 * `'hidden'` - wait for element to be either detached from DOM, or have an empty bounding box or `visibility:hidden`.
   This is opposite to the `'visible'` option.
 
-## context-option-storage-state
+## js-python-wait-for-function-polling
+* langs: js, python
+- `polling` <[float]|"raf">
+
+If [`option: polling`] is `'raf'`, then [`param: expression`] is constantly executed in `requestAnimationFrame`
+callback. If [`option: polling`] is a number, then it is treated as an interval in milliseconds at which the function
+would be executed. Defaults to `raf`.
+
+## csharp-java-wait-for-function-polling
+* langs: csharp, java
+- `pollingInterval` <[float]>
+
+If specified, then it is treated as an interval in milliseconds at which the function would be executed. By default if the option is not specified [`param: expression`] is executed in `requestAnimationFrame` callback.
+
+## browser-option-ignoredefaultargs
+* langs: js, python
+- `ignoreDefaultArgs` <[boolean]|[Array]<[string]>>
+
+If `true`, Playwright does not pass its own configurations args and only uses the ones from [`option: args`]. If an
+array is given, then filters out the given default arguments. Dangerous option; use with care. Defaults to `false`.
+
+## csharp-java-browser-option-ignoredefaultargs
+* langs: csharp, java
+- `ignoreDefaultArgs` <[Array]<[string]>>
+
+If `true`, Playwright does not pass its own configurations args and only uses the ones from [`option: args`].
+Dangerous option; use with care.
+
+## csharp-java-browser-option-ignorealldefaultargs
+* langs: csharp, java
+- `ignoreAllDefaultArgs` <[boolean]>
+
+If `true`, Playwright does not pass its own configurations args and only uses the ones from [`option: args`].
+Dangerous option; use with care. Defaults to `false`.
+
+## browser-option-proxy
+- `proxy` <[Object]>
+  - `server` <[string]> Proxy to be used for all requests. HTTP and SOCKS proxies are supported, for example
+    `http://myproxy.com:3128` or `socks5://myproxy.com:3128`. Short form `myproxy.com:3128` is considered an HTTP
+    proxy.
+  - `bypass` <[string]> Optional coma-separated domains to bypass proxy, for example `".com, chromium.org,
+    .domain.com"`.
+  - `username` <[string]> Optional username to use if HTTP proxy requires authentication.
+  - `password` <[string]> Optional password to use if HTTP proxy requires authentication.
+
+Network proxy settings.
+
+## csharp-java-browser-option-env
+* langs: csharp, java
+- `env` <[Object]<[string], [string]>>
+
+Specify environment variables that will be visible to the browser. Defaults to `process.env`.
+
+## js-python-browser-option-env
+* langs: js, python
+- `env` <[Object]<[string], [string]|[float]|[boolean]>>
+
+Specify environment variables that will be visible to the browser. Defaults to `process.env`.
+
+## js-python-context-option-storage-state
+* langs: js, python
 - `storageState` <[path]|[Object]>
   - `cookies` <[Array]<[Object]>> Optional cookies to set for context
     - `name` <[string]>
@@ -109,15 +169,29 @@ Defaults to `'visible'`. Can be either:
     - `expires` <[float]> Optional Unix time in seconds.
     - `httpOnly` <[boolean]> Optional httpOnly flag
     - `secure` <[boolean]> Optional secure flag
-    - `sameSite` <"Strict"|"Lax"|"None"> Optional sameSite flag
+    - `sameSite` <["SameSiteAttribute"]<"Strict"|"Lax"|"None">> Optional sameSite flag
   - `origins` <[Array]<[Object]>> Optional localStorage to set for context
     - `origin` <[string]>
     - `localStorage` <[Array]<[Object]>>
       - `name` <[string]>
       - `value` <[string]>
 
-Populates context with given storage state. This method can be used to initialize context with logged-in information
+Populates context with given storage state. This option can be used to initialize context with logged-in information
 obtained via [`method: BrowserContext.storageState`]. Either a path to the file with saved storage, or an object with the following fields:
+
+## csharp-java-context-option-storage-state
+* langs: csharp, java
+- `storageState` <[string]>
+
+Populates context with given storage state. This option can be used to initialize context with logged-in information
+obtained via [`method: BrowserContext.storageState`].
+
+## csharp-java-context-option-storage-state-path
+* langs: csharp, java
+- `storageStatePath` <[path]>
+
+Populates context with given storage state. This option can be used to initialize context with logged-in information
+obtained via [`method: BrowserContext.storageState`]. Path to the file with saved storage state.
 
 ## context-option-acceptdownloads
 - `acceptDownloads` <[boolean]>
@@ -135,12 +209,51 @@ Whether to ignore HTTPS errors during navigation. Defaults to `false`.
 Toggles bypassing page's Content-Security-Policy.
 
 ## context-option-viewport
-* langs: js
+* langs: js, java
+  - alias-java: viewportSize
+  - alias-csharp: viewportSize
 - `viewport` <[null]|[Object]>
   - `width` <[int]> page width in pixels.
   - `height` <[int]> page height in pixels.
 
 Sets a consistent viewport for each page. Defaults to an 1280x720 viewport. `null` disables the default viewport.
+
+## evaluate-expression
+- `expression` <[string]>
+
+JavaScript expression to be evaluated in the browser context. If it looks like
+a function declaration, it is interpreted as a function. Otherwise, evaluated
+as an expression.
+
+## js-evaluate-pagefunction
+* langs: js
+- `pageFunction` <[function]|[string]>
+
+Function to be evaluated in the page context.
+
+## js-evalonselector-pagefunction
+* langs: js
+- `pageFunction` <[function]\([Element]\)>
+
+Function to be evaluated in the page context.
+
+## js-evalonselectorall-pagefunction
+* langs: js
+- `pageFunction` <[function]\([Array]<[Element]>\)>
+
+Function to be evaluated in the page context.
+
+## js-worker-evaluate-workerfunction
+* langs: js
+- `pageFunction` <[function]|[string]>
+
+Function to be evaluated in the worker context.
+
+## js-electron-evaluate-workerfunction
+* langs: js
+- `pageFunction` <[function]|[Electron]>
+
+Function to be evaluated in the worker context.
 
 ## python-context-option-viewport
 * langs: python
@@ -224,7 +337,7 @@ Whether to emulate network being offline. Defaults to `false`.
 Credentials for [HTTP authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication).
 
 ## context-option-colorscheme
-- `colorScheme` <"light"|"dark"|"no-preference">
+- `colorScheme` <[ColorScheme]<"light"|"dark"|"no-preference">>
 
 Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. See
 [`method: Page.emulateMedia`] for more details. Defaults to '`light`'.
@@ -260,46 +373,52 @@ Enables [HAR](http://www.softwareishard.com/blog/har-12-spec) recording for all 
 specified, the HAR is not recorded. Make sure to await [`method: BrowserContext.close`] for the HAR to be
 saved.
 
-## python-context-option-recordhar-omit-content
-* langs: python
-- `record_har_omit_content` <[boolean]>
-
-Optional setting to control whether to omit request content from the HAR. Defaults to `false`.
-
-## python-context-option-recordhar-path
-* langs: python
-- `record_har_path` <[path]>
+## context-option-recordhar-path
+* langs: csharp, java, python
+  - alias-python: record_har_path
+- `recordHarPath` <[path]>
 
 Path on the filesystem to write the HAR file to.
+
+## context-option-recordhar-omit-content
+* langs: csharp, java, python
+  - alias-python: record_har_omit_content
+- `recordHarOmitContent` <[boolean]>
+
+Optional setting to control whether to omit request content from the HAR. Defaults to `false`.
 
 ## context-option-recordvideo
 * langs: js
 - `recordVideo` <[Object]>
   - `dir` <[path]> Path to the directory to put videos into.
-  - `size` <[Object]> Optional dimensions of the recorded videos. If not specified the size will be equal to `viewport`.
-    If `viewport` is not configured explicitly the video size defaults to 1280x720. Actual picture of each page will be
-    scaled down if necessary to fit the specified size.
+  - `size` <[Object]> Optional dimensions of the recorded videos. If not specified the size will be equal to `viewport`
+    scaled down to fit into 800x800. If `viewport` is not configured explicitly the video size defaults to 800x450.
+    Actual picture of each page will be scaled down if necessary to fit the specified size.
     - `width` <[int]> Video frame width.
     - `height` <[int]> Video frame height.
 
 Enables video recording for all pages into `recordVideo.dir` directory. If not specified videos are not recorded. Make
 sure to await [`method: BrowserContext.close`] for videos to be saved.
 
-## python-context-option-recordvideo-dir
-* langs: python
-- `record_video_dir` <[path]>
+## context-option-recordvideo-dir
+* langs: csharp, java, python
+  - alias-python: record_video_dir
+- `recordVideoDir` <[path]>
 
 Path to the directory to put videos into.
 
-## python-context-option-recordvideo-size
-* langs: python
-- `record_video_size` <[Object]>
-  If `viewport` is not configured explicitly the video size defaults to 1280x720. Actual picture of each page will be
+## context-option-recordvideo-size
+* langs: csharp, java, python
+  - alias-python: record_video_size
+- `recordVideoSize` <[Object]>
+  If `viewport` is not configured explicitly the video size defaults to 800x450. Actual picture of each page will be
   scaled down if necessary to fit the specified size.
   - `width` <[int]> Video frame width.
   - `height` <[int]> Video frame height.
 
-Optional dimensions of the recorded videos. If not specified the size will be equal to `viewport`.
+Dimensions of the recorded videos. If not specified the size will be equal to `viewport`
+scaled down to fit into 800x800. If `viewport` is not configured explicitly the video size defaults to 800x450.
+Actual picture of each page will be scaled down if necessary to fit the specified size.
 
 ## context-option-proxy
 - `proxy` <[Object]>
@@ -314,7 +433,7 @@ option to work. If all contexts override the proxy, global proxy will be never u
 `launch({ proxy: { server: 'per-context' } })`.
 
 ## select-options-values
-* langs: js
+* langs: java, js
 - `values` <[null]|[string]|[ElementHandle]|[Array]<[string]>|[Object]|[Array]<[ElementHandle]>|[Array]<[Object]>>
   - `value` <[string]> Matches by `option.value`. Optional.
   - `label` <[string]> Matches by `option.label`. Optional.
@@ -335,13 +454,24 @@ A glob pattern, regex pattern or predicate receiving [URL] to match while waitin
 Event name, same one typically passed into `*.on(event)`.
 
 ## wait-for-load-state-state
-- `state` <"load"|"domcontentloaded"|"networkidle">
+- `state` <[LoadState]<"load"|"domcontentloaded"|"networkidle">>
 
 Optional load state to wait for, defaults to `load`. If the state has been already reached while loading current document, the
 method resolves immediately. Can be one of:
   * `'load'` - wait for the `load` event to be fired.
   * `'domcontentloaded'` - wait for the `DOMContentLoaded` event to be fired.
   * `'networkidle'` - wait until there are no network connections for at least `500` ms.
+
+## screenshot-type
+- `type` <[ScreenshotType]<"png"|"jpeg">>
+
+Specify screenshot type, defaults to `png`.
+
+## java-wait-for-event-callback
+* langs: java
+- `callback` <[Runnable]>
+
+Callback that performs the action triggering the event.
 
 ## python-select-options-element
 * langs: python
@@ -375,26 +505,19 @@ only the first option matching one of the passed options is selected. Optional.
 
 Receives the event data and resolves to truthy value when the waiting should resolve.
 
-## python-wait-for-event-timeout
-* langs: python
+## wait-for-event-timeout
+* langs: csharp, java, python
 - `timeout` <[float]>
 
 Maximum time to wait for in milliseconds. Defaults to `30000` (30 seconds). Pass `0` to disable timeout.
 The default value can be changed by using the [`method: BrowserContext.setDefaultTimeout`].
 
-## python-evaluate-expression
-* langs: python
-- `expression` <string>
+## android-timeout
+* langs: js
+- `timeout` <[float]>
 
-JavaScript expression to be evaluated in the browser context. If it looks like a function declaration,
-it is interpreted as a function. Otherwise, evaluated as an expression.
-
-## python-evaluate-force-expression
-* langs: python
-- `force_expr` <boolean>
-
-Whether to treat given `expression` as JavaScript evaluate expression, even though it looks like an arrow function.
-Optional.
+Maximum time in milliseconds, defaults to 30 seconds, pass `0` to disable timeout. The default value can be changed by
+using the [`method: AndroidDevice.setDefaultTimeout`] method.
 
 ## shared-context-params-list
 - %%-context-option-acceptdownloads-%%
@@ -420,8 +543,8 @@ Optional.
 - %%-context-option-videospath-%%
 - %%-context-option-videosize-%%
 - %%-context-option-recordhar-%%
-- %%-python-context-option-recordhar-path-%%
-- %%-python-context-option-recordhar-omit-content-%%
+- %%-context-option-recordhar-path-%%
+- %%-context-option-recordhar-omit-content-%%
 - %%-context-option-recordvideo-%%
-- %%-python-context-option-recordvideo-dir-%%
-- %%-python-context-option-recordvideo-size-%%
+- %%-context-option-recordvideo-dir-%%
+- %%-context-option-recordvideo-size-%%

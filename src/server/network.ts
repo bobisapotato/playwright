@@ -17,12 +17,15 @@
 import * as frames from './frames';
 import * as types from './types';
 import { assert } from '../utils/utils';
-import { EventEmitter } from 'events';
+import { SdkObject } from './instrumentation';
 
 export function filterCookies(cookies: types.NetworkCookie[], urls: string[]): types.NetworkCookie[] {
   const parsedURLs = urls.map(s => new URL(s));
   // Chromiums's cookies are missing sameSite when it is 'None'
   return cookies.filter(c => {
+    // Firefox and WebKit can return cookies with empty values.
+    if (!c.value)
+      return false;
     if (!parsedURLs.length)
       return true;
     for (const parsedURL of parsedURLs) {
@@ -33,7 +36,7 @@ export function filterCookies(cookies: types.NetworkCookie[], urls: string[]): t
         continue;
       if (!parsedURL.pathname.startsWith(c.path))
         continue;
-      if ((parsedURL.protocol === 'https:') !== c.secure)
+      if (parsedURL.protocol !== 'https:' && c.secure)
         continue;
       return true;
     }
@@ -61,15 +64,21 @@ export function rewriteCookies(cookies: types.SetNetworkCookieParam[]): types.Se
   });
 }
 
-function stripFragmentFromUrl(url: string): string {
-  if (!url.indexOf('#'))
-    return url;
-  const parsed = new URL(url);
-  parsed.hash = '';
-  return parsed.href;
+export function parsedURL(url: string): URL | null {
+  try {
+    return new URL(url);
+  } catch (e) {
+    return null;
+  }
 }
 
-export class Request {
+export function stripFragmentFromUrl(url: string): string {
+  if (!url.includes('#'))
+    return url;
+  return url.substring(0, url.indexOf('#'));
+}
+
+export class Request extends SdkObject {
   readonly _routeDelegate: RouteDelegate | null;
   private _response: Response | null = null;
   private _redirectedFrom: Request | null;
@@ -90,6 +99,7 @@ export class Request {
 
   constructor(routeDelegate: RouteDelegate | null, frame: frames.Frame, redirectedFrom: Request | null, documentId: string | undefined,
     url: string, resourceType: string, method: string, postData: Buffer | null, headers: types.HeadersArray) {
+    super(frame);
     assert(!url.startsWith('data:'), 'Data urls should not fire requests');
     assert(!(routeDelegate && redirectedFrom), 'Should not be able to intercept redirects');
     this._routeDelegate = routeDelegate;
@@ -194,12 +204,13 @@ export class Request {
   }
 }
 
-export class Route {
+export class Route extends SdkObject {
   private readonly _request: Request;
   private readonly _delegate: RouteDelegate;
   private _handled = false;
 
   constructor(request: Request, delegate: RouteDelegate) {
+    super(request.frame());
     this._request = request;
     this._delegate = delegate;
   }
@@ -252,7 +263,7 @@ export type ResourceTiming = {
   responseStart: number;
 };
 
-export class Response {
+export class Response extends SdkObject {
   private _request: Request;
   private _contentPromise: Promise<Buffer> | null = null;
   _finishedPromise: Promise<{ error?: string }>;
@@ -266,6 +277,7 @@ export class Response {
   private _timing: ResourceTiming;
 
   constructor(request: Request, status: number, statusText: string, headers: types.HeadersArray, timing: ResourceTiming, getResponseBodyCallback: GetResponseBodyCallback) {
+    super(request.frame());
     this._request = request;
     this._timing = timing;
     this._status = status;
@@ -334,7 +346,7 @@ export class Response {
   }
 }
 
-export class WebSocket extends EventEmitter {
+export class WebSocket extends SdkObject {
   private _url: string;
 
   static Events = {
@@ -344,8 +356,8 @@ export class WebSocket extends EventEmitter {
     FrameSent: 'framesent',
   };
 
-  constructor(url: string) {
-    super();
+  constructor(parent: SdkObject, url: string) {
+    super(parent);
     this._url = url;
   }
 

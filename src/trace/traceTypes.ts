@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+import { StackFrame } from '../common/types';
+import { NodeSnapshot } from './snapshotterInjected';
+export { NodeSnapshot } from './snapshotterInjected';
+
 export type ContextCreatedTraceEvent = {
   timestamp: number,
   type: 'context-created',
@@ -22,6 +26,8 @@ export type ContextCreatedTraceEvent = {
   deviceScaleFactor: number,
   isMobile: boolean,
   viewportSize?: { width: number, height: number },
+  debugName?: string,
+  snapshotScript: string,
 };
 
 export type ContextDestroyedTraceEvent = {
@@ -36,10 +42,15 @@ export type NetworkResourceTraceEvent = {
   contextId: string,
   pageId: string,
   frameId: string,
+  resourceId: string,
   url: string,
   contentType: string,
   responseHeaders: { name: string, value: string }[],
-  sha1: string,
+  requestHeaders: { name: string, value: string }[],
+  method: string,
+  status: number,
+  requestSha1: string,
+  responseSha1: string,
 };
 
 export type PageCreatedTraceEvent = {
@@ -68,20 +79,16 @@ export type ActionTraceEvent = {
   timestamp: number,
   type: 'action',
   contextId: string,
-  action: string,
+  objectType: string,
+  method: string,
+  params: any,
+  stack?: StackFrame[],
   pageId?: string,
-  selector?: string,
-  label?: string,
-  value?: string,
   startTime: number,
   endTime: number,
   logs?: string[],
-  snapshot?: {
-    sha1: string,
-    duration: number,
-  },
-  stack?: string,
   error?: string,
+  snapshots?: { name: string, snapshotId: string }[],
 };
 
 export type DialogOpenedEvent = {
@@ -117,6 +124,17 @@ export type LoadEvent = {
   pageId: string,
 };
 
+export type FrameSnapshotTraceEvent = {
+  timestamp: number,
+  type: 'snapshot',
+  contextId: string,
+  pageId: string,
+  frameId: string,  // Empty means main frame.
+  snapshot: FrameSnapshot,
+  frameUrl: string,
+  snapshotId?: string,
+};
+
 export type TraceEvent =
     ContextCreatedTraceEvent |
     ContextDestroyedTraceEvent |
@@ -128,18 +146,12 @@ export type TraceEvent =
     DialogOpenedEvent |
     DialogClosedEvent |
     NavigationEvent |
-    LoadEvent;
-
+    LoadEvent |
+    FrameSnapshotTraceEvent;
 
 export type FrameSnapshot = {
-  frameId: string,
-  url: string,
-  html: string,
-  resourceOverrides: { url: string, sha1: string }[],
-};
-
-export type PageSnapshot = {
-  viewportSize?: { width: number, height: number },
-  // First frame is the main frame.
-  frames: FrameSnapshot[],
+  doctype?: string,
+  html: NodeSnapshot,
+  resourceOverrides: { url: string, sha1?: string, ref?: number }[],
+  viewport: { width: number, height: number },
 };

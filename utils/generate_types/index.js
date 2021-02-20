@@ -52,11 +52,11 @@ let hadChanges = false;
     if (clazz)
       return `[${clazz.name}]`;
     if (member.kind === 'method')
-      return createMemberLink(member.clazz, `${member.clazz.varName}.${member.name}(${renderJSSignature(member.argsArray)})`);
+      return createMemberLink(member.clazz, `${member.clazz.varName}.${member.alias}(${renderJSSignature(member.argsArray)})`);
     if (member.kind === 'event')
-      return createMemberLink(member.clazz, `${member.clazz.varName}.on('${member.name}')`);
+      return createMemberLink(member.clazz, `${member.clazz.varName}.on('${member.alias.toLowerCase()}')`);
     if (member.kind === 'property')
-      return createMemberLink(member.clazz, `${member.clazz.varName}.${member.name}`);
+      return createMemberLink(member.clazz, `${member.clazz.varName}.${member.alias}`);
     throw new Error('Unknown member kind ' + member.kind);
   });
   documentation.generateSourceCodeComments();
@@ -79,7 +79,7 @@ let hadChanges = false;
     return writeComment(docClassForName(className).comment) + '\n';
   }, (className, methodName) => {
     const docClass = docClassForName(className);
-    const method = docClass.methods.get(methodName);
+    const method = docClass.methodsArray.find(m => m.alias === methodName);
     handledMethods.add(`${className}.${methodName}`);
     if (!method) {
       if (new Set(['on', 'addListener', 'off', 'removeListener', 'once']).has(methodName))
@@ -137,7 +137,7 @@ function objectDefinitionsToString(overriddes) {
 }
 
 function nameForProperty(member) {
-  return (member.required || member.name.startsWith('...')) ? member.name : member.name + '?';
+  return (member.required || member.alias.startsWith('...')) ? member.alias : member.alias + '?';
 }
 
 /**
@@ -184,7 +184,8 @@ function createEventDescriptions(classDesc) {
   if (!hasUniqueEvents(classDesc))
     return [];
   const descriptions = [];
-  for (const [eventName, value] of classDesc.events) {
+  for (let [eventName, value] of classDesc.events) {
+    eventName = eventName.toLowerCase();
     const type = stringifyComplexType(value && value.type, '', classDesc.name, eventName, 'payload');
     const argName = argNameForType(type);
     const params = argName ? `${argName}: ${type}` : '';
@@ -216,25 +217,25 @@ function classBody(classDesc) {
   parts.push(members.map(member => {
     if (member.kind === 'event')
       return '';
-    if (member.name === 'waitForEvent') {
+    if (member.alias === 'waitForEvent') {
       const parts = [];
       for (const {eventName, params, comment, type} of eventDescriptions) {
         if (comment)
           parts.push(writeComment(comment, '  '));
-        parts.push(`  ${member.name}(event: '${eventName}', optionsOrPredicate?: { predicate?: (${params}) => boolean, timeout?: number } | ((${params}) => boolean)): Promise<${type}>;\n`);
+        parts.push(`  ${member.alias}(event: '${eventName}', optionsOrPredicate?: { predicate?: (${params}) => boolean, timeout?: number } | ((${params}) => boolean)): Promise<${type}>;\n`);
       }
 
       return parts.join('\n');
     }
     const jsdoc = memberJSDOC(member, '  ');
     const args = argsFromMember(member, '  ', classDesc.name);
-    let type = stringifyComplexType(member.type, '  ', classDesc.name, member.name);
+    let type = stringifyComplexType(member.type, '  ', classDesc.name, member.alias);
     if (member.async)
       type = `Promise<${type}>`;
     // do this late, because we still want object definitions for overridden types
-    if (!hasOwnMethod(classDesc, member.name))
+    if (!hasOwnMethod(classDesc, member.alias))
       return '';
-    return `${jsdoc}${member.name}${args}: ${type};`
+    return `${jsdoc}${member.alias}${args}: ${type};`
   }).filter(x => x).join('\n\n'));
   return parts.join('\n');
 }
@@ -375,7 +376,7 @@ function memberJSDOC(member, indent) {
     lines.push(...member.comment.split('\n'));
   if (member.deprecated)
     lines.push('@deprecated');
-  lines.push(...member.argsArray.map(arg => `@param ${arg.name.replace(/\./g, '')} ${arg.comment.replace('\n', ' ')}`));
+  lines.push(...member.argsArray.map(arg => `@param ${arg.alias.replace(/\./g, '')} ${arg.comment.replace('\n', ' ')}`));
   if (!lines.length)
     return indent;
   return writeComment(lines.join('\n'), indent) + '\n' + indent;
@@ -399,7 +400,7 @@ function renderJSSignature(args) {
   const tokens = [];
   let hasOptional = false;
   for (const arg of args) {
-    const name = arg.name;
+    const name = arg.alias;
     const optional = !arg.required;
     if (tokens.length) {
       if (optional && !hasOptional)

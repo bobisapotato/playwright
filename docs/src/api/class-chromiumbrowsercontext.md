@@ -1,4 +1,5 @@
 # class: ChromiumBrowserContext
+* langs: js, python
 * extends: [BrowserContext]
 
 Chromium-specific features including background pages, service worker support, etc.
@@ -15,7 +16,7 @@ background_page = await context.wait_for_event("backgroundpage")
 background_page = context.wait_for_event("backgroundpage")
 ```
 
-## event: ChromiumBrowserContext.backgroundpage
+## event: ChromiumBrowserContext.backgroundPage
 - type: <[Page]>
 
 Emitted when new background page is created in the context.
@@ -24,7 +25,7 @@ Emitted when new background page is created in the context.
 Only works with persistent context.
 :::
 
-## event: ChromiumBrowserContext.serviceworker
+## event: ChromiumBrowserContext.serviceWorker
 - type: <[Worker]>
 
 Emitted when new service worker is created in the context.

@@ -30,6 +30,8 @@ Optional error code. Defaults to `failed`, could be one of the following:
 
 ## async method: Route.continue
 * langs:
+  - alias-csharp: resume
+  - alias-java: resume
   - alias-python: continue_
 
 Continues route's request with optional overrides.
@@ -152,9 +154,22 @@ Response headers. Header values will be converted to a string.
 If set, equals to setting `Content-Type` response header.
 
 ### option: Route.fulfill.body
+* langs: js, python
 - `body` <[string]|[Buffer]>
 
 Response body.
+
+### option: Route.fulfill.body
+* langs: csharp, java
+- `body` <[string]>
+
+Optional response body as text.
+
+### option: Route.fulfill.bodyBytes
+* langs: csharp, java
+- `bodyBytes` <[Buffer]>
+
+Optional response body as raw bytes.
 
 ### option: Route.fulfill.path
 - `path` <[path]>

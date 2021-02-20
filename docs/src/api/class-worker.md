@@ -35,47 +35,47 @@ Emitted when this dedicated [WebWorker](https://developer.mozilla.org/en-US/docs
 ## async method: Worker.evaluate
 - returns: <[Serializable]>
 
-Returns the return value of [`param: pageFunction`]
+Returns the return value of [`param: expression`].
 
-If the function passed to the `worker.evaluate` returns a [Promise], then `worker.evaluate` would wait for the promise
+If the function passed to the [`method: Worker.evaluate`] returns a [Promise], then [`method: Worker.evaluate`] would wait for the promise
 to resolve and return its value.
 
-If the function passed to the `worker.evaluate` returns a non-[Serializable] value, then `worker.evaluate` returns
-`undefined`. DevTools Protocol also supports transferring some additional values that are not serializable by `JSON`:
-`-0`, `NaN`, `Infinity`, `-Infinity`, and bigint literals.
+If the function passed to the [`method: Worker.evaluate`] returns a non-[Serializable] value, then [`method: Worker.evaluate`] returns `undefined`. Playwright also supports transferring some 
+additional values that are not serializable by `JSON`: `-0`, `NaN`, `Infinity`, `-Infinity`.
 
-### param: Worker.evaluate.pageFunction
-* langs: js
-- `pageFunction` <[function]|[string]>
-
-Function to be evaluated in the worker context
+### param: Worker.evaluate.expression = %%-evaluate-expression-%%
 
 ### param: Worker.evaluate.arg
 - `arg` <[EvaluationArgument]>
 
-Optional argument to pass to [`param: pageFunction`]
+Optional argument to pass to [`param: expression`].
 
 ## async method: Worker.evaluateHandle
 - returns: <[JSHandle]>
 
-Returns the return value of [`param: pageFunction`] as in-page object (JSHandle).
+Returns the return value of [`param: expression`] as a [JSHandle].
 
-The only difference between `worker.evaluate` and `worker.evaluateHandle` is that `worker.evaluateHandle` returns
-in-page object (JSHandle).
+The only difference between [`method: Worker.evaluate`] and
+[`method: Worker.evaluateHandle`] is that [`method: Worker.evaluateHandle`] 
+returns [JSHandle].
 
-If the function passed to the `worker.evaluateHandle` returns a [Promise], then `worker.evaluateHandle` would wait for
+If the function passed to the [`method: Worker.evaluateHandle`] returns a [Promise], then [`method: Worker.evaluateHandle`] would wait for
 the promise to resolve and return its value.
 
-### param: Worker.evaluateHandle.pageFunction
-* langs: js
-- `pageFunction` <[function]|[string]>
-
-Function to be evaluated in the page context
+### param: Worker.evaluateHandle.expression = %%-evaluate-expression-%%
 
 ### param: Worker.evaluateHandle.arg
 - `arg` <[EvaluationArgument]>
 
-Optional argument to pass to [`param: pageFunction`]
+Optional argument to pass to [`param: expression`].
 
 ## method: Worker.url
 - returns: <[string]>
+
+## method: Worker.waitForClose
+* langs: csharp, java
+- returns: <[Worker]>
+
+Performs action and waits for the Worker to close.
+
+### option: Worker.waitForClose.timeout = %%-wait-for-event-timeout-%%

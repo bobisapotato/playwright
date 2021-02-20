@@ -1,6 +1,6 @@
 module.exports = {
   "stories": [
-    "../src/cli/traceViewer/web/ui/*.stories.tsx",
+    "../src/web/**/*.stories.tsx",
   ],
   "addons": [
     "@storybook/addon-links",

@@ -4,10 +4,10 @@ At every point of time, page exposes its current frame tree via the [`method: Pa
 [`method: Frame.childFrames`] methods.
 
 [Frame] object's lifecycle is controlled by three events, dispatched on the page object:
-* [`event: Page.frameattached`] - fired when the frame gets attached to the page. A Frame can be attached to the page
+* [`event: Page.frameAttached`] - fired when the frame gets attached to the page. A Frame can be attached to the page
   only once.
-* [`event: Page.framenavigated`] - fired when the frame commits navigation to a different URL.
-* [`event: Page.framedetached`] - fired when the frame gets detached from the page.  A Frame can be detached from the
+* [`event: Page.frameNavigated`] - fired when the frame commits navigation to a different URL.
+* [`event: Page.frameDetached`] - fired when the frame gets detached from the page.  A Frame can be detached from the
   page only once.
 
 An example of dumping frame tree:
@@ -73,120 +73,6 @@ def dump_frame_tree(frame, indent):
 with sync_playwright() as playwright:
     run(playwright)
 ```
-
-## async method: Frame.$
-* langs:
-  - alias-python: query_selector
-- returns: <[null]|[ElementHandle]>
-
-Returns the ElementHandle pointing to the frame element.
-
-The method finds an element matching the specified selector within the frame. See
-[Working with selectors](./selectors.md) for more details. If no elements match the selector,
-returns `null`.
-
-### param: Frame.$.selector = %%-query-selector-%%
-
-## async method: Frame.$$
-* langs:
-  - alias-python: query_selector_all
-- returns: <[Array]<[ElementHandle]>>
-
-Returns the ElementHandles pointing to the frame elements.
-
-The method finds all elements matching the specified selector within the frame. See
-[Working with selectors](./selectors.md) for more details. If no elements match the selector,
-returns empty array.
-
-### param: Frame.$$.selector = %%-query-selector-%%
-
-## async method: Frame.$eval
-* langs:
-  - alias-python: eval_on_selector
-- returns: <[Serializable]>
-
-Returns the return value of [`param: pageFunction`]
-
-The method finds an element matching the specified selector within the frame and passes it as a first argument to
-[`param: pageFunction`]. See [Working with selectors](./selectors.md) for more details. If no
-elements match the selector, the method throws an error.
-
-If [`param: pageFunction`] returns a [Promise], then `frame.$eval` would wait for the promise to resolve and return its
-value.
-
-Examples:
-
-```js
-const searchValue = await frame.$eval('#search', el => el.value);
-const preloadHref = await frame.$eval('link[rel=preload]', el => el.href);
-const html = await frame.$eval('.main-container', (e, suffix) => e.outerHTML + suffix, 'hello');
-```
-
-```python async
-search_value = await frame.eval_on_selector("#search", "el => el.value")
-preload_href = await frame.eval_on_selector("link[rel=preload]", "el => el.href")
-html = await frame.eval_on_selector(".main-container", "(e, suffix) => e.outerHTML + suffix", "hello")
-```
-
-```python sync
-search_value = frame.eval_on_selector("#search", "el => el.value")
-preload_href = frame.eval_on_selector("link[rel=preload]", "el => el.href")
-html = frame.eval_on_selector(".main-container", "(e, suffix) => e.outerHTML + suffix", "hello")
-```
-
-### param: Frame.$eval.selector = %%-query-selector-%%
-
-### param: Frame.$eval.pageFunction
-* langs: js
-- `pageFunction` <[function]\([Element]\)>
-
-Function to be evaluated in browser context
-
-### param: Frame.$eval.arg
-- `arg` <[EvaluationArgument]>
-
-Optional argument to pass to [`param: pageFunction`]
-
-## async method: Frame.$$eval
-* langs:
-  - alias-python: eval_on_selector_all
-- returns: <[Serializable]>
-
-Returns the return value of [`param: pageFunction`]
-
-The method finds all elements matching the specified selector within the frame and passes an array of matched elements
-as a first argument to [`param: pageFunction`]. See [Working with selectors](./selectors.md) for
-more details.
-
-If [`param: pageFunction`] returns a [Promise], then `frame.$$eval` would wait for the promise to resolve and return its
-value.
-
-Examples:
-
-```js
-const divsCounts = await frame.$$eval('div', (divs, min) => divs.length >= min, 10);
-```
-
-```python async
-divs_counts = await frame.eval_on_selector_all("div", "(divs, min) => divs.length >= min", 10)
-```
-
-```python sync
-divs_counts = frame.eval_on_selector_all("div", "(divs, min) => divs.length >= min", 10)
-```
-
-### param: Frame.$$eval.selector = %%-query-selector-%%
-
-### param: Frame.$$eval.pageFunction
-* langs: js
-- `pageFunction` <[function]\([Array]<[Element]>\)>
-
-Function to be evaluated in browser context
-
-### param: Frame.$$eval.arg
-- `arg` <[EvaluationArgument]>
-
-Optional argument to pass to [`param: pageFunction`]
 
 ## async method: Frame.addScriptTag
 - returns: <[ElementHandle]>
@@ -408,17 +294,99 @@ Optional event-specific initialization properties.
 
 ### option: Frame.dispatchEvent.timeout = %%-input-timeout-%%
 
+## async method: Frame.evalOnSelector
+* langs:
+  - alias-python: eval_on_selector
+  - alias-js: $eval
+- returns: <[Serializable]>
+
+Returns the return value of [`param: expression`].
+
+The method finds an element matching the specified selector within the frame and passes it as a first argument to
+[`param: expression`]. See [Working with selectors](./selectors.md) for more details. If no
+elements match the selector, the method throws an error.
+
+If [`param: expression`] returns a [Promise], then [`method: Frame.evalOnSelector`] would wait for the promise to resolve and return its
+value.
+
+Examples:
+
+```js
+const searchValue = await frame.$eval('#search', el => el.value);
+const preloadHref = await frame.$eval('link[rel=preload]', el => el.href);
+const html = await frame.$eval('.main-container', (e, suffix) => e.outerHTML + suffix, 'hello');
+```
+
+```python async
+search_value = await frame.eval_on_selector("#search", "el => el.value")
+preload_href = await frame.eval_on_selector("link[rel=preload]", "el => el.href")
+html = await frame.eval_on_selector(".main-container", "(e, suffix) => e.outerHTML + suffix", "hello")
+```
+
+```python sync
+search_value = frame.eval_on_selector("#search", "el => el.value")
+preload_href = frame.eval_on_selector("link[rel=preload]", "el => el.href")
+html = frame.eval_on_selector(".main-container", "(e, suffix) => e.outerHTML + suffix", "hello")
+```
+
+### param: Frame.evalOnSelector.selector = %%-query-selector-%%
+
+### param: Frame.evalOnSelector.expression = %%-evaluate-expression-%%
+
+### param: Frame.evalOnSelector.arg
+- `arg` <[EvaluationArgument]>
+
+Optional argument to pass to [`param: expression`].
+
+## async method: Frame.evalOnSelectorAll
+* langs:
+  - alias-python: eval_on_selector_all
+  - alias-js: $$eval
+- returns: <[Serializable]>
+
+Returns the return value of [`param: expression`].
+
+The method finds all elements matching the specified selector within the frame and passes an array of matched elements
+as a first argument to [`param: expression`]. See [Working with selectors](./selectors.md) for
+more details.
+
+If [`param: expression`] returns a [Promise], then [`method: Frame.evalOnSelectorAll`] would wait for the promise to resolve and return its
+value.
+
+Examples:
+
+```js
+const divsCounts = await frame.$$eval('div', (divs, min) => divs.length >= min, 10);
+```
+
+```python async
+divs_counts = await frame.eval_on_selector_all("div", "(divs, min) => divs.length >= min", 10)
+```
+
+```python sync
+divs_counts = frame.eval_on_selector_all("div", "(divs, min) => divs.length >= min", 10)
+```
+
+### param: Frame.evalOnSelectorAll.selector = %%-query-selector-%%
+
+### param: Frame.evalOnSelectorAll.expression = %%-evaluate-expression-%%
+
+### param: Frame.evalOnSelectorAll.arg
+- `arg` <[EvaluationArgument]>
+
+Optional argument to pass to [`param: expression`].
+
 ## async method: Frame.evaluate
 - returns: <[Serializable]>
 
-Returns the return value of [`param: pageFunction`]
+Returns the return value of [`param: expression`].
 
 If the function passed to the [`method: Frame.evaluate`] returns a [Promise], then [`method: Frame.evaluate`] would wait for the promise to
 resolve and return its value.
 
 If the function passed to the [`method: Frame.evaluate`] returns a non-[Serializable] value, then
-[`method: Frame.evaluate`] returns `undefined`. DevTools Protocol also supports transferring some additional values that
-are not serializable by `JSON`: `-0`, `NaN`, `Infinity`, `-Infinity`, and bigint literals.
+[`method: Frame.evaluate`] returns `undefined`. Playwright also supports transferring some
+additional values that are not serializable by `JSON`: `-0`, `NaN`, `Infinity`, `-Infinity`.
 
 ```js
 const result = await frame.evaluate(([x, y]) => {
@@ -477,24 +445,20 @@ html = frame.evaluate("([body, suffix]) => body.innerHTML + suffix", [body_handl
 body_handle.dispose()
 ```
 
-### param: Frame.evaluate.pageFunction
-* langs: js
-- `pageFunction` <[function]|[string]>
-
-Function to be evaluated in browser context
+### param: Frame.evaluate.expression = %%-evaluate-expression-%%
 
 ### param: Frame.evaluate.arg
 - `arg` <[EvaluationArgument]>
 
-Optional argument to pass to [`param: pageFunction`]
+Optional argument to pass to [`param: expression`].
 
 ## async method: Frame.evaluateHandle
 - returns: <[JSHandle]>
 
-Returns the return value of [`param: pageFunction`] as in-page object (JSHandle).
+Returns the return value of [`param: expression`] as a [JSHandle].
 
 The only difference between [`method: Frame.evaluate`] and [`method: Frame.evaluateHandle`] is that
-[method: Frame.evaluateHandle`] returns in-page object (JSHandle).
+[method: Frame.evaluateHandle`] returns [JSHandle].
 
 If the function, passed to the [`method: Frame.evaluateHandle`], returns a [Promise], then
 [`method: Frame.evaluateHandle`] would wait for the promise to resolve and return its value.
@@ -551,23 +515,19 @@ print(result_handle.json_value())
 result_handle.dispose()
 ```
 
-### param: Frame.evaluateHandle.pageFunction
-* langs: js
-- `pageFunction` <[function]|[string]>
-
-Function to be evaluated in the page context
+### param: Frame.evaluateHandle.expression = %%-evaluate-expression-%%
 
 ### param: Frame.evaluateHandle.arg
 - `arg` <[EvaluationArgument]>
 
-Optional argument to pass to [`param: pageFunction`]
+Optional argument to pass to [`param: expression`].
 
 ## async method: Frame.fill
 
-This method waits for an element matching [`param: selector`], waits for [actionability](./actionability.md) checks,
-focuses the element, fills it and triggers an `input` event after filling. If the element matching [`param: selector`]
-is not an `<input>`, `<textarea>` or `[contenteditable]` element, this method throws an error. Note that you can pass an
-empty string to clear the input field.
+This method waits for an element matching [`param: selector`], waits for [actionability](./actionability.md) checks, focuses the element, fills it and triggers an `input` event after filling.
+If the element is inside the `<label>` element that has associated [control](https://developer.mozilla.org/en-US/docs/Web/API/HTMLLabelElement/control), that control will be filled instead.
+If the element to be filled is not an `<input>`, `<textarea>` or `[contenteditable]` element, this method throws an error.
+Note that you can pass an empty string to clear the input field.
 
 To send fine-grained keyboard events, use [`method: Frame.type`].
 
@@ -634,6 +594,8 @@ Attribute name to get the value for.
 ### option: Frame.getAttribute.timeout = %%-input-timeout-%%
 
 ## async method: Frame.goto
+* langs:
+  - alias-java: navigate
 - returns: <[null]|[Response]>
 
 Returns the main resource response. In case of multiple redirects, the navigation will resolve with the response of the
@@ -761,7 +723,7 @@ Returns whether the element is [enabled](./actionability.md#enabled).
 ## async method: Frame.isHidden
 - returns: <[boolean]>
 
-Returns whether the element is hidden, the opposite of [visible](./actionability.md#visible).
+Returns whether the element is hidden, the opposite of [visible](./actionability.md#visible).  [`option: selector`] that does not match any elements is considered hidden.
 
 ### param: Frame.isHidden.selector = %%-input-selector-%%
 
@@ -770,7 +732,7 @@ Returns whether the element is hidden, the opposite of [visible](./actionability
 ## async method: Frame.isVisible
 - returns: <[boolean]>
 
-Returns whether the element is [visible](./actionability.md#visible).
+Returns whether the element is [visible](./actionability.md#visible). [`option: selector`] that does not match any elements is considered not visible.
 
 ### param: Frame.isVisible.selector = %%-input-selector-%%
 
@@ -832,6 +794,34 @@ Time to wait between `keydown` and `keyup` in milliseconds. Defaults to 0.
 ### option: Frame.press.noWaitAfter = %%-input-no-wait-after-%%
 
 ### option: Frame.press.timeout = %%-input-timeout-%%
+
+## async method: Frame.querySelector
+* langs:
+  - alias-python: query_selector
+  - alias-js: $
+- returns: <[null]|[ElementHandle]>
+
+Returns the ElementHandle pointing to the frame element.
+
+The method finds an element matching the specified selector within the frame. See
+[Working with selectors](./selectors.md) for more details. If no elements match the selector,
+returns `null`.
+
+### param: Frame.querySelector.selector = %%-query-selector-%%
+
+## async method: Frame.querySelectorAll
+* langs:
+  - alias-python: query_selector_all
+  - alias-js: $$
+- returns: <[Array]<[ElementHandle]>>
+
+Returns the ElementHandles pointing to the frame elements.
+
+The method finds all elements matching the specified selector within the frame. See
+[Working with selectors](./selectors.md) for more details. If no elements match the selector,
+returns empty array.
+
+### param: Frame.querySelectorAll.selector = %%-query-selector-%%
 
 ## async method: Frame.selectOption
 - returns: <[Array]<[string]>>
@@ -1022,7 +1012,7 @@ Returns frame's url.
 ## async method: Frame.waitForFunction
 - returns: <[JSHandle]>
 
-Returns when the [`param: pageFunction`] returns a truthy value, returns that value.
+Returns when the [`param: expression`] returns a truthy value, returns that value.
 
 The [`method: Frame.waitForFunction`] can be used to observe viewport size change:
 
@@ -1047,7 +1037,7 @@ async def run(playwright):
     webkit = playwright.webkit
     browser = await webkit.launch()
     page = await browser.new_page()
-    await page.evaluate("window.x = 0; setTimeout(() => { window.x = 100 }, 1000);", force_expr=True)
+    await page.evaluate("window.x = 0; setTimeout(() => { window.x = 100 }, 1000);")
     await page.main_frame.wait_for_function("() => window.x > 0")
     await browser.close()
 
@@ -1064,7 +1054,7 @@ def run(playwright):
     webkit = playwright.webkit
     browser = webkit.launch()
     page = browser.new_page()
-    page.evaluate("window.x = 0; setTimeout(() => { window.x = 100 }, 1000);", force_expr=True)
+    page.evaluate("window.x = 0; setTimeout(() => { window.x = 100 }, 1000);")
     page.main_frame.wait_for_function("() => window.x > 0")
     browser.close()
 
@@ -1089,23 +1079,16 @@ selector = ".foo"
 frame.wait_for_function("selector => !!document.querySelector(selector)", selector)
 ```
 
-### param: Frame.waitForFunction.pageFunction
-* langs: js
-- `pageFunction` <[function]|[string]>
-
-Function to be evaluated in browser context
+### param: Frame.waitForFunction.expression = %%-evaluate-expression-%%
 
 ### param: Frame.waitForFunction.arg
 - `arg` <[EvaluationArgument]>
 
-Optional argument to pass to [`param: pageFunction`]
+Optional argument to pass to [`param: expression`].
 
-### option: Frame.waitForFunction.polling
-- `polling` <[float]|"raf">
+### option: Frame.waitForFunction.polling = %%-js-python-wait-for-function-polling-%%
 
-If [`option: polling`] is `'raf'`, then [`param: pageFunction`] is constantly executed in `requestAnimationFrame`
-callback. If [`option: polling`] is a number, then it is treated as an interval in milliseconds at which the function
-would be executed. Defaults to `raf`.
+### option: Frame.waitForFunction.polling = %%-csharp-java-wait-for-function-polling-%%
 
 ### option: Frame.waitForFunction.timeout = %%-wait-for-timeout-%%
 

@@ -23,6 +23,13 @@ jobs:
     - run: npm ci
     - run: npm run build
     - run: npm run lint
+    - name: Verify clean tree
+      run: |
+        if [[ -n $(git status -s) ]]; then
+          echo "ERROR: tree is dirty after npm run build:"
+          git diff
+          exit 1
+        fi
 
   build-playwright-driver:
     name: "build-playwright-driver"
@@ -35,5 +42,5 @@ jobs:
     - uses: microsoft/playwright-github-action@v1
     - run: npm ci
     - run: npm run build
-    - run: node utils/build/update_canary_version.js
+    - run: node utils/build/update_canary_version.js --today-date
     - run: utils/build/build-playwright-driver.sh

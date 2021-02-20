@@ -27,6 +27,7 @@ const md = require('../markdown');
   *   retType: ParsedType | null,
   *   template: ParsedType | null,
   *   union: ParsedType | null,
+  *   unionName?: string,
   *   next: ParsedType | null,
   * }} ParsedType
   */
@@ -35,7 +36,8 @@ const md = require('../markdown');
  * @typedef {{
  *   only?: string[],
  *   aliases?: Object<string, string>,
-  *  types?: Object<string, Documentation.Type>,
+ *   types?: Object<string, Documentation.Type>,
+ *   overrides?: Object<string, Documentation.Member>,
  * }} Langs
  */
 
@@ -47,7 +49,7 @@ const md = require('../markdown');
   *   option?: string
   * }): string} Renderer
   */
- 
+
 class Documentation {
   /**
    * @param {!Array<!Documentation.Class>} classesArray
@@ -117,17 +119,21 @@ class Documentation {
       for (const member of clazz.membersArray)
         membersMap.set(`${member.kind}: ${clazz.name}.${member.name}`, member);
     }
-    this._patchLinks = nodes => patchLinks(nodes, classesMap, membersMap, linkRenderer);
+    /**
+     * @param {Documentation.Class|Documentation.Member|null} classOrMember
+     * @param {MarkdownNode[]} nodes
+     */
+    this._patchLinks = (classOrMember, nodes) => patchLinks(classOrMember, nodes, classesMap, membersMap, linkRenderer);
 
     for (const clazz of this.classesArray)
-      clazz.visit(item => this._patchLinks(item.spec));
+      clazz.visit(item => this._patchLinks(item, item.spec));
   }
 
   /**
    * @param {MarkdownNode[]} nodes
    */
   renderLinksInText(nodes) {
-    this._patchLinks(nodes);
+    this._patchLinks(null, nodes);
   }
 
   generateSourceCodeComments() {
@@ -224,7 +230,7 @@ Documentation.Class = class {
       const member2 = this.membersArray[i + 1];
       if (member1.kind !== 'event' || member2.kind !== 'event')
         continue;
-      if (member1.name > member2.name)
+      if (member1.name.localeCompare(member2.name, 'en', { sensitivity: 'base' }) > 0)
         errors.push(`Event '${member1.name}' in class ${this.name} breaks alphabetic ordering of events`);
     }
 
@@ -236,7 +242,7 @@ Documentation.Class = class {
         continue;
       if (member1.kind === 'method' && member1.name === 'constructor')
         continue;
-      if (member1.name.replace(/^\$+/, '$') > member2.name.replace(/^\$+/, '$')) {
+      if (member1.name.replace(/^\$+/, '$').localeCompare(member2.name.replace(/^\$+/, '$'), 'en', { sensitivity: 'base' }) > 0) {
         let memberName1 = `${this.name}.${member1.name}`;
         if (member1.kind === 'method')
           memberName1 += '()';
@@ -248,7 +254,7 @@ Documentation.Class = class {
     }
   }
 
-  /** 
+  /**
    * @param {function(Documentation.Member|Documentation.Class): void} visitor
    */
   visit(visitor) {
@@ -287,6 +293,8 @@ Documentation.Member = class {
     this.index();
     /** @type {!Documentation.Class} */
     this.clazz = null;
+    /** @type {Documentation.Member=} */
+    this.enclosingMethod = undefined;
     this.deprecated = false;
     if (spec) {
       md.visitAll(spec, node => {
@@ -300,10 +308,15 @@ Documentation.Member = class {
 
   index() {
     this.args = new Map();
+    if (this.kind === 'method')
+      this.enclosingMethod = this;
     for (const arg of this.argsArray) {
       this.args.set(arg.name, arg);
-      if (arg.name === 'options')
+      arg.enclosingMethod = this;
+      if (arg.name === 'options') {
         arg.type.properties.sort((p1, p2) => p1.name.localeCompare(p2.name));
+        arg.type.properties.forEach(p => p.enclosingMethod = this);
+      }
     }
   }
 
@@ -320,13 +333,11 @@ Documentation.Member = class {
     for (const arg of this.argsArray) {
       if (arg.langs.only && !arg.langs.only.includes(lang))
         continue;
-      if (arg.langs.aliases && arg.langs.aliases[lang])
-        arg.alias = arg.langs.aliases[lang];
-      arg.filterForLanguage(lang);
-      arg.type.filterForLanguage(lang);
-      if (arg.name === 'options' && !arg.type.properties.length)
+      const overriddenArg = (arg.langs.overrides && arg.langs.overrides[lang]) || arg;
+      overriddenArg.filterForLanguage(lang);
+      if (overriddenArg.name === 'options' && !overriddenArg.type.properties.length)
         continue;
-      argsArray.push(arg);
+      argsArray.push(overriddenArg);
     }
     this.argsArray = argsArray;
   }
@@ -372,7 +383,7 @@ Documentation.Member = class {
     return new Documentation.Member('event', langs, name, type, [], spec);
   }
 
-  /** 
+  /**
    * @param {function(Documentation.Member|Documentation.Class): void} visitor
    */
   visit(visitor) {
@@ -418,10 +429,14 @@ Documentation.Type = class {
    */
   static fromParsedType(parsedType, inUnion = false) {
     if (!inUnion && parsedType.union) {
-      const type = new Documentation.Type('union');
+      const type = new Documentation.Type(parsedType.unionName || '');
       type.union = [];
-      for (let t = parsedType; t; t = t.union)
-        type.union.push(Documentation.Type.fromParsedType(t, true));
+      for (let t = parsedType; t; t = t.union) {
+        const nestedUnion = !!t.unionName && t !== parsedType;
+        type.union.push(Documentation.Type.fromParsedType(t, !nestedUnion));
+        if (nestedUnion)
+          break;
+      }
       return type;
     }
 
@@ -518,6 +533,21 @@ Documentation.Type = class {
 };
 
 /**
+ * @param {ParsedType} type
+ * @returns {boolean}
+ */
+function isStringUnion(type) {
+  if (!type.union)
+    return false;
+  while (type) {
+    if (!type.name.startsWith('"') || !type.name.endsWith('"'))
+      return false;
+    type = type.union;
+  }
+  return true;
+}
+
+/**
  * @param {string} type
  * @returns {ParsedType}
  */
@@ -561,6 +591,12 @@ function parseTypeExpression(type) {
     union = parseTypeExpression(type.substring(firstTypeLength + 1));
   else if (type[firstTypeLength] === ',')
     next = parseTypeExpression(type.substring(firstTypeLength + 1));
+
+  if (template && !template.unionName && isStringUnion(template)) {
+    template.unionName = name;
+    return template;
+  }
+
   return {
     name,
     args,
@@ -589,30 +625,44 @@ function matchingBracket(str, open, close) {
 }
 
 /**
+ * @param {Documentation.Class|Documentation.Member|null} classOrMember
  * @param {MarkdownNode[]} spec
  * @param {Map<string, Documentation.Class>} classesMap
  * @param {Map<string, Documentation.Member>} membersMap
  * @param {Renderer} linkRenderer
  */
-function patchLinks(spec, classesMap, membersMap, linkRenderer) {
+function patchLinks(classOrMember, spec, classesMap, membersMap, linkRenderer) {
   if (!spec)
     return;
   md.visitAll(spec, node => {
     if (!node.text)
       return;
-    node.text = node.text.replace(/\[`((?:event|method|property): [^\]]+)`\]/g, (match, p1) => {
-      const member = membersMap.get(p1);
-      if (!member)
-        throw new Error('Undefined member references: ' + match);
-      return linkRenderer({ member }) || match;
-    });
-    node.text = node.text.replace(/\[`(param|option): ([^\]]+)`\]/g, (match, p1, p2) => {
-      if (p1 === 'param')
-        return linkRenderer({ param: p2 }) || match;
+    node.text = node.text.replace(/\[`(\w+): ([^\]]+)`\]/g, (match, p1, p2) => {
+      if (['event', 'method', 'property'].includes(p1)) {
+        const memberName = p1 + ': ' + p2;
+        const member = membersMap.get(memberName);
+        if (!member)
+          throw new Error('Undefined member references: ' + match);
+        return linkRenderer({ member }) || match;
+      }
+      if (p1 === 'param') {
+        let alias = p2;
+        if (classOrMember) {
+          // param/option reference can only be in method or same method parameter comments.
+          // @ts-ignore
+          const method = classOrMember.enclosingMethod;
+          const param = method.argsArray.find(a => a.name === p2);
+          if (!param)
+            throw new Error(`Referenced parameter ${match} not found in the parent method ${method.name} `);
+          alias = param.alias;
+        }
+        return linkRenderer({ param: alias }) || match;
+      }
       if (p1 === 'option')
         return linkRenderer({ option: p2 }) || match;
+      throw new Error(`Undefined link prefix, expected event|method|property|param|option, got: ` + match);
     });
-    node.text = node.text.replace(/\[([\w]+)\]/, (match, p1) => {
+    node.text = node.text.replace(/\[([\w]+)\]/g, (match, p1) => {
       const clazz = classesMap.get(p1);
       if (clazz)
         return linkRenderer({ clazz }) || match;

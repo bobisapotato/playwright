@@ -22,7 +22,7 @@ JSHandle prevents the referenced JavaScript object being garbage collected unles
 [`method: JSHandle.dispose`]. JSHandles are auto-disposed when their origin frame gets navigated or the parent context
 gets destroyed.
 
-JSHandle instances can be used as an argument in [`method: Page.$eval`], [`method: Page.evaluate`] and
+JSHandle instances can be used as an argument in [`method: Page.evalOnSelector`], [`method: Page.evaluate`] and
 [`method: Page.evaluateHandle`] methods.
 
 ## method: JSHandle.asElement
@@ -37,11 +37,11 @@ The `jsHandle.dispose` method stops referencing the element handle.
 ## async method: JSHandle.evaluate
 - returns: <[Serializable]>
 
-Returns the return value of [`param: pageFunction`]
+Returns the return value of [`param: expression`].
 
-This method passes this handle as the first argument to [`param: pageFunction`].
+This method passes this handle as the first argument to [`param: expression`].
 
-If [`param: pageFunction`] returns a [Promise], then `handle.evaluate` would wait for the promise to resolve and return
+If [`param: expression`] returns a [Promise], then `handle.evaluate` would wait for the promise to resolve and return
 its value.
 
 Examples:
@@ -61,42 +61,33 @@ tweet_handle = page.query_selector(".tweet .retweets")
 assert tweet_handle.evaluate("node => node.innerText") == "10 retweets"
 ```
 
-### param: JSHandle.evaluate.pageFunction
-* langs: js
-- `pageFunction` <[function]>
-
-Function to be evaluated in browser context
+### param: JSHandle.evaluate.expression = %%-evaluate-expression-%%
 
 ### param: JSHandle.evaluate.arg
 - `arg` <[EvaluationArgument]>
 
-Optional argument to pass to [`param: pageFunction`]
+Optional argument to pass to [`param: expression`].
 
 ## async method: JSHandle.evaluateHandle
 - returns: <[JSHandle]>
 
-Returns the return value of [`param: pageFunction`] as in-page object (JSHandle).
+Returns the return value of [`param: expression`] as a [JSHandle].
 
-This method passes this handle as the first argument to [`param: pageFunction`].
+This method passes this handle as the first argument to [`param: expression`].
 
-The only difference between `jsHandle.evaluate` and `jsHandle.evaluateHandle` is that `jsHandle.evaluateHandle` returns
-in-page object (JSHandle).
+The only difference between `jsHandle.evaluate` and `jsHandle.evaluateHandle` is that `jsHandle.evaluateHandle` returns [JSHandle].
 
 If the function passed to the `jsHandle.evaluateHandle` returns a [Promise], then `jsHandle.evaluateHandle` would wait
 for the promise to resolve and return its value.
 
 See [`method: Page.evaluateHandle`] for more details.
 
-### param: JSHandle.evaluateHandle.pageFunction
-* langs: js
-- `pageFunction` <[function]|[string]>
-
-Function to be evaluated
+### param: JSHandle.evaluateHandle.expression = %%-evaluate-expression-%%
 
 ### param: JSHandle.evaluateHandle.arg
 - `arg` <[EvaluationArgument]>
 
-Optional argument to pass to [`param: pageFunction`]
+Optional argument to pass to [`param: expression`].
 
 ## async method: JSHandle.getProperties
 - returns: <[Map]<[string], [JSHandle]>>

@@ -68,9 +68,10 @@ function runBuild() {
 const webPackFiles = [
   'src/server/injected/injectedScript.webpack.config.js',
   'src/server/injected/utilityScript.webpack.config.js',
-  'src/debug/injected/consoleApi.webpack.config.js',
-  'src/cli/injected/recorder.webpack.config.js',
-  'src/cli/traceViewer/web/web.webpack.config.js',
+  'src/server/supplements/injected/consoleApi.webpack.config.js',
+  'src/server/supplements/injected/recorder.webpack.config.js',
+  'src/web/traceViewer/webpack.config.js',
+  'src/web/recorder/webpack.config.js',
 ];
 for (const file of webPackFiles) {
   steps.push({
@@ -119,6 +120,13 @@ onChanges.push({
     'src/trace/traceTypes.ts',
   ],
   script: 'utils/generate_types/index.js',
+});
+
+// Copy images.
+steps.push({
+  command: process.platform === 'win32' ? 'copy' : 'cp',
+  args: [filePath('src/web/recorder/*.png'), filePath('lib/web/recorder/')],
+  shell: true,
 });
 
 watchMode ? runWatch() : runBuild();

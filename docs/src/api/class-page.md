@@ -171,10 +171,13 @@ except Error as e:
 ## event: Page.dialog
 - type: <[Dialog]>
 
-Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Playwright can respond
-to the dialog via [`method: Dialog.accept`] or [`method: Dialog.dismiss`] methods.
+Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` or `beforeunload`. Listener **must** either [`method: Dialog.accept`] or [`method: Dialog.dismiss`] the dialog - otherwise the page will [freeze](https://developer.mozilla.org/en-US/docs/Web/JavaScript/EventLoop#never_blocking) waiting for the dialog, and actions like click will never finish.
 
-## event: Page.domcontentloaded
+:::note
+When no [`event: Page.dialog`] listeners are present, all dialogs are automatically dismissed.
+:::
+
+## event: Page.DOMContentLoaded
 - type: <[Page]>
 
 Emitted when the JavaScript [`DOMContentLoaded`](https://developer.mozilla.org/en-US/docs/Web/Events/DOMContentLoaded)
@@ -192,7 +195,7 @@ downloaded content. If [`option: acceptDownloads`] is not set, download events a
 not performed and user has no access to the downloaded files.
 :::
 
-## event: Page.filechooser
+## event: Page.fileChooser
 - type: <[FileChooser]>
 
 Emitted when a file chooser is supposed to appear, such as after clicking the  `<input type=file>`. Playwright can
@@ -208,17 +211,17 @@ page.on('filechooser', async (fileChooser) => {
 page.on("filechooser", lambda file_chooser: file_chooser.set_files("/tmp/myfile.pdf"))
 ```
 
-## event: Page.frameattached
+## event: Page.frameAttached
 - type: <[Frame]>
 
 Emitted when a frame is attached.
 
-## event: Page.framedetached
+## event: Page.frameDetached
 - type: <[Frame]>
 
 Emitted when a frame is detached.
 
-## event: Page.framenavigated
+## event: Page.frameNavigated
 - type: <[Frame]>
 
 Emitted when a frame is navigated to a new url.
@@ -228,10 +231,14 @@ Emitted when a frame is navigated to a new url.
 
 Emitted when the JavaScript [`load`](https://developer.mozilla.org/en-US/docs/Web/Events/load) event is dispatched.
 
-## event: Page.pageerror
+## event: Page.pageError
 - type: <[Error]>
 
 Emitted when an uncaught exception happens within the page.
+
+## event: Page.pageError
+* langs: csharp, java
+- type: <[string]>
 
 ## event: Page.popup
 - type: <[Page]>
@@ -276,17 +283,17 @@ cases).
 Emitted when a page issues a request. The [request] object is read-only. In order to intercept and mutate requests, see
 [`method: Page.route`] or [`method: BrowserContext.route`].
 
-## event: Page.requestfailed
+## event: Page.requestFailed
 - type: <[Request]>
 
 Emitted when a request fails, for example by timing out.
 
 :::note
 HTTP Error responses, such as 404 or 503, are still successful responses from HTTP standpoint, so request will complete
-with [`event: Page.requestfinished`] event and not with [`event: Page.requestfailed`].
+with [`event: Page.requestFinished`] event and not with [`event: Page.requestFailed`].
 :::
 
-## event: Page.requestfinished
+## event: Page.requestFinished
 - type: <[Request]>
 
 Emitted when a request finishes successfully after downloading the response body. For a successful response, the
@@ -298,125 +305,16 @@ sequence of events is `request`, `response` and `requestfinished`.
 Emitted when [response] status and headers are received for a request. For a successful response, the sequence of events
 is `request`, `response` and `requestfinished`.
 
-## event: Page.websocket
+## event: Page.webSocket
 - type: <[WebSocket]>
 
-Emitted when <[WebSocket]> request is sent.
+Emitted when [WebSocket] request is sent.
 
 ## event: Page.worker
 - type: <[Worker]>
 
 Emitted when a dedicated [WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) is spawned by the
 page.
-
-## async method: Page.$
-* langs:
-  - alias-python: query_selector
-- returns: <[null]|[ElementHandle]>
-
-The method finds an element matching the specified selector within the page. If no elements match the selector, the
-return value resolves to `null`.
-
-Shortcut for main frame's [`method: Frame.$`].
-
-### param: Page.$.selector = %%-query-selector-%%
-
-## async method: Page.$$
-* langs:
-  - alias-python: query_selector_all
-- returns: <[Array]<[ElementHandle]>>
-
-The method finds all elements matching the specified selector within the page. If no elements match the selector, the
-return value resolves to `[]`.
-
-Shortcut for main frame's [`method: Frame.$$`].
-
-### param: Page.$$.selector = %%-query-selector-%%
-
-## async method: Page.$eval
-* langs:
-  - alias-python: eval_on_selector
-- returns: <[Serializable]>
-
-The method finds an element matching the specified selector within the page and passes it as a first argument to
-[`param: pageFunction`]. If no elements match the selector, the method throws an error. Returns the value of
-[`param: pageFunction`].
-
-If [`param: pageFunction`] returns a [Promise], then [`method: Page.$eval`] would wait for the promise to resolve and
-return its value.
-
-Examples:
-
-```js
-const searchValue = await page.$eval('#search', el => el.value);
-const preloadHref = await page.$eval('link[rel=preload]', el => el.href);
-const html = await page.$eval('.main-container', (e, suffix) => e.outerHTML + suffix, 'hello');
-```
-
-```python async
-search_value = await page.eval_on_selector("#search", "el => el.value")
-preload_href = await page.eval_on_selector("link[rel=preload]", "el => el.href")
-html = await page.eval_on_selector(".main-container", "(e, suffix) => e.outer_html + suffix", "hello")
-```
-
-```python sync
-search_value = page.eval_on_selector("#search", "el => el.value")
-preload_href = page.eval_on_selector("link[rel=preload]", "el => el.href")
-html = page.eval_on_selector(".main-container", "(e, suffix) => e.outer_html + suffix", "hello")
-```
-
-Shortcut for main frame's [`method: Frame.$eval`].
-
-### param: Page.$eval.selector = %%-query-selector-%%
-
-### param: Page.$eval.pageFunction
-* langs: js
-- `pageFunction` <[function]\([Element]\)>
-
-Function to be evaluated in browser context
-
-### param: Page.$eval.arg
-- `arg` <[EvaluationArgument]>
-
-Optional argument to pass to [`param: pageFunction`]
-
-## async method: Page.$$eval
-* langs:
-  - alias-python: eval_on_selector_all
-- returns: <[Serializable]>
-
-The method finds all elements matching the specified selector within the page and passes an array of matched elements as
-a first argument to [`param: pageFunction`]. Returns the result of [`param: pageFunction`] invocation.
-
-If [`param: pageFunction`] returns a [Promise], then [`method: Page.$$eval`] would wait for the promise to resolve and
-return its value.
-
-Examples:
-
-```js
-const divCounts = await page.$$eval('div', (divs, min) => divs.length >= min, 10);
-```
-
-```python async
-div_counts = await page.eval_on_selector_all("div", "(divs, min) => divs.length >= min", 10)
-```
-
-```python sync
-div_counts = page.eval_on_selector_all("div", "(divs, min) => divs.length >= min", 10)
-```
-
-### param: Page.$$eval.selector = %%-query-selector-%%
-
-### param: Page.$$eval.pageFunction
-* langs: js
-- `pageFunction` <[function]\([Array]<[Element]>\)>
-
-Function to be evaluated in browser context
-
-### param: Page.$$eval.arg
-- `arg` <[EvaluationArgument]>
-
-Optional argument to pass to [`param: pageFunction`]
 
 ## property: Page.accessibility
 - type: <[Accessibility]>
@@ -466,6 +364,12 @@ The order of evaluation of multiple scripts installed via [`method: BrowserConte
   - `content` <[string]> Raw script content. Optional.
 
 Script to be evaluated in the page.
+
+### param: Page.addInitScript.script
+* langs: csharp, java
+- `script` <[string]|[path]>
+
+Script to be evaluated in all pages in the browser context.
 
 ### param: Page.addInitScript.arg
 * langs: js
@@ -818,29 +722,110 @@ page.evaluate("matchMedia('(prefers-color-scheme: light)').matches")
 page.evaluate("matchMedia('(prefers-color-scheme: no-preference)').matches")
 ```
 
-### param: Page.emulateMedia.params
-* langs: js
-- `params` <[Object]>
-  - `media` <[null]|"screen"|"print"> Changes the CSS media type of the page. The only allowed values are
-    `'screen'`, `'print'` and `null`. Passing `null` disables CSS media emulation. Omitting `media` or passing
-    `undefined` does not change the emulated value. Optional.
-  - `colorScheme` <[null]|"light"|"dark"|"no-preference"> Emulates `'prefers-colors-scheme'` media feature,
-    supported values are `'light'`, `'dark'`, `'no-preference'`. Passing `null` disables color scheme emulation.
-    Omitting `colorScheme` or passing `undefined` does not change the emulated value. Optional.
+### option: Page.emulateMedia.media
+- `media` <null|[Media]<"screen"|"print">>
+
+Changes the CSS media type of the page. The only allowed values are `'screen'`, `'print'` and `null`.
+Passing `null` disables CSS media emulation.
+
+### option: Page.emulateMedia.colorScheme
+- `colorScheme` <null|[ColorScheme]<"light"|"dark"|"no-preference">>
+
+Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. Passing
+`null` disables color scheme emulation.
+
+## async method: Page.evalOnSelector
+* langs:
+  - alias-python: eval_on_selector
+  - alias-js: $eval
+- returns: <[Serializable]>
+
+The method finds an element matching the specified selector within the page and passes it as a first argument to
+[`param: expression`]. If no elements match the selector, the method throws an error. Returns the value of
+[`param: expression`].
+
+If [`param: expression`] returns a [Promise], then [`method: Page.evalOnSelector`] would wait for the promise to resolve and
+return its value.
+
+Examples:
+
+```js
+const searchValue = await page.$eval('#search', el => el.value);
+const preloadHref = await page.$eval('link[rel=preload]', el => el.href);
+const html = await page.$eval('.main-container', (e, suffix) => e.outerHTML + suffix, 'hello');
+```
+
+```python async
+search_value = await page.eval_on_selector("#search", "el => el.value")
+preload_href = await page.eval_on_selector("link[rel=preload]", "el => el.href")
+html = await page.eval_on_selector(".main-container", "(e, suffix) => e.outer_html + suffix", "hello")
+```
+
+```python sync
+search_value = page.eval_on_selector("#search", "el => el.value")
+preload_href = page.eval_on_selector("link[rel=preload]", "el => el.href")
+html = page.eval_on_selector(".main-container", "(e, suffix) => e.outer_html + suffix", "hello")
+```
+
+Shortcut for main frame's [`method: Frame.evalOnSelector`].
+
+### param: Page.evalOnSelector.selector = %%-query-selector-%%
+
+### param: Page.evalOnSelector.expression = %%-evaluate-expression-%%
+
+### param: Page.evalOnSelector.arg
+- `arg` <[EvaluationArgument]>
+
+Optional argument to pass to [`param: expression`].
+
+## async method: Page.evalOnSelectorAll
+* langs:
+  - alias-python: eval_on_selector_all
+  - alias-js: $$eval
+- returns: <[Serializable]>
+
+The method finds all elements matching the specified selector within the page and passes an array of matched elements as
+a first argument to [`param: expression`]. Returns the result of [`param: expression`] invocation.
+
+If [`param: expression`] returns a [Promise], then [`method: Page.evalOnSelectorAll`] would wait for the promise to resolve and
+return its value.
+
+Examples:
+
+```js
+const divCounts = await page.$$eval('div', (divs, min) => divs.length >= min, 10);
+```
+
+```python async
+div_counts = await page.eval_on_selector_all("div", "(divs, min) => divs.length >= min", 10)
+```
+
+```python sync
+div_counts = page.eval_on_selector_all("div", "(divs, min) => divs.length >= min", 10)
+```
+
+### param: Page.evalOnSelectorAll.selector = %%-query-selector-%%
+
+### param: Page.evalOnSelectorAll.expression = %%-evaluate-expression-%%
+
+### param: Page.evalOnSelectorAll.arg
+- `arg` <[EvaluationArgument]>
+
+Optional argument to pass to [`param: expression`].
 
 ## async method: Page.evaluate
 - returns: <[Serializable]>
 
-Returns the value of the [`param: pageFunction`] invocation.
+Returns the value of the [`param: expression`] invocation.
 
 If the function passed to the [`method: Page.evaluate`] returns a [Promise], then [`method: Page.evaluate`] would wait
 for the promise to resolve and return its value.
 
 If the function passed to the [`method: Page.evaluate`] returns a non-[Serializable] value, then
-[`method: Page.evaluate`] resolves to `undefined`. DevTools Protocol also supports transferring some additional values
-that are not serializable by `JSON`: `-0`, `NaN`, `Infinity`, `-Infinity`, and bigint literals.
+[`method: Page.evaluate`] resolves to `undefined`. Playwright also supports transferring some
+additional values that are not serializable by `JSON`: `-0`, `NaN`, `Infinity`, `-Infinity`.
 
-Passing argument to [`param: pageFunction`]:
+Passing argument to [`param: expression`]:
 
 ```js
 const result = await page.evaluate(([x, y]) => {
@@ -901,24 +886,19 @@ body_handle.dispose()
 
 Shortcut for main frame's [`method: Frame.evaluate`].
 
-### param: Page.evaluate.pageFunction
-* langs: js
-- `pageFunction` <[function]|[string]>
-
-Function to be evaluated in the page context
+### param: Page.evaluate.expression = %%-evaluate-expression-%%
 
 ### param: Page.evaluate.arg
 - `arg` <[EvaluationArgument]>
 
-Optional argument to pass to [`param: pageFunction`]
+Optional argument to pass to [`param: expression`].
 
 ## async method: Page.evaluateHandle
 - returns: <[JSHandle]>
 
-Returns the value of the [`param: pageFunction`] invocation as in-page object (JSHandle).
+Returns the value of the [`param: expression`] invocation as a [JSHandle].
 
-The only difference between [`method: Page.evaluate`] and [`method: Page.evaluateHandle`] is that [`method: Page.evaluateHandle`] returns in-page
-object (JSHandle).
+The only difference between [`method: Page.evaluate`] and [`method: Page.evaluateHandle`] is that [`method: Page.evaluateHandle`] returns [JSHandle].
 
 If the function passed to the [`method: Page.evaluateHandle`] returns a [Promise], then [`method: Page.evaluateHandle`] would wait for the
 promise to resolve and return its value.
@@ -975,16 +955,12 @@ print(result_handle.json_value())
 result_handle.dispose()
 ```
 
-### param: Page.evaluateHandle.pageFunction
-* langs: js
-- `pageFunction` <[function]|[string]>
-
-Function to be evaluated in the page context
+### param: Page.evaluateHandle.expression = %%-evaluate-expression-%%
 
 ### param: Page.evaluateHandle.arg
 - `arg` <[EvaluationArgument]>
 
-Optional argument to pass to [`param: pageFunction`]
+Optional argument to pass to [`param: expression`].
 
 ## async method: Page.exposeBinding
 
@@ -1245,10 +1221,10 @@ Callback function which will be called in Playwright's context.
 
 ## async method: Page.fill
 
-This method waits for an element matching [`param: selector`], waits for [actionability](./actionability.md) checks,
-focuses the element, fills it and triggers an `input` event after filling. If the element matching [`param: selector`]
-is not an `<input>`, `<textarea>` or `[contenteditable]` element, this method throws an error. Note that you can pass an
-empty string to clear the input field.
+This method waits for an element matching [`param: selector`], waits for [actionability](./actionability.md) checks, focuses the element, fills it and triggers an `input` event after filling.
+If the element is inside the `<label>` element that has associated [control](https://developer.mozilla.org/en-US/docs/Web/API/HTMLLabelElement/control), that control will be filled instead.
+If the element to be filled is not an `<input>`, `<textarea>` or `[contenteditable]` element, this method throws an error.
+Note that you can pass an empty string to clear the input field.
 
 To send fine-grained keyboard events, use [`method: Page.type`].
 
@@ -1306,6 +1282,24 @@ frame = page.frame(url=r".*domain.*")
 
 Frame name or other frame lookup options.
 
+### param: Page.frame.name
+* langs: csharp, java
+- `name` <[string]>
+
+Frame name specified in the `iframe`'s `name` attribute.
+
+## method: Page.frameByUrl
+* langs: csharp, java
+- returns: <[null]|[Frame]>
+
+Returns frame with matching URL.
+
+### param: Page.frameByUrl.url
+* langs: csharp, java
+- `url` <[string]|[RegExp]|[function]\([URL]\):[boolean]>
+
+A glob pattern, regex pattern or predicate receiving frame's `url` as a [URL] object.
+
 ## method: Page.frames
 - returns: <[Array]<[Frame]>>
 
@@ -1350,6 +1344,8 @@ Navigate to the next page in history.
 ### option: Page.goForward.waitUntil = %%-navigation-wait-until-%%
 
 ## async method: Page.goto
+* langs:
+  - alias-java: navigate
 - returns: <[null]|[Response]>
 
 Returns the main resource response. In case of multiple redirects, the navigation will resolve with the response of the
@@ -1481,7 +1477,7 @@ Returns whether the element is [enabled](./actionability.md#enabled).
 ## async method: Page.isHidden
 - returns: <[boolean]>
 
-Returns whether the element is hidden, the opposite of [visible](./actionability.md#visible).
+Returns whether the element is hidden, the opposite of [visible](./actionability.md#visible).  [`option: selector`] that does not match any elements is considered hidden.
 
 ### param: Page.isHidden.selector = %%-input-selector-%%
 
@@ -1490,7 +1486,7 @@ Returns whether the element is hidden, the opposite of [visible](./actionability
 ## async method: Page.isVisible
 - returns: <[boolean]>
 
-Returns whether the element is [visible](./actionability.md#visible).
+Returns whether the element is [visible](./actionability.md#visible). [`option: selector`] that does not match any elements is considered not visible.
 
 ### param: Page.isVisible.selector = %%-input-selector-%%
 
@@ -1511,6 +1507,19 @@ The page's main frame. Page is guaranteed to have a main frame which persists du
 - returns: <[null]|[Page]>
 
 Returns the opener for popup pages and `null` for others. If the opener has been closed already the returns `null`.
+
+## async method: Page.pause
+
+Pauses script execution. Playwright will stop executing the script and wait for the user to either press 'Resume'
+button in the page overlay or to call `playwright.resume()` in the DevTools console.
+
+User can inspect selectors or perform manual steps while paused. Resume will continue running the original script from
+the place it was paused.
+
+:::note
+This method requires Playwright to be started in a headed mode, with a falsy [`option: headless`] value in
+the [`method: BrowserType.launch`].
+:::
 
 ## async method: Page.pdf
 - returns: <[Buffer]>
@@ -1633,21 +1642,46 @@ Paper ranges to print, e.g., '1-5, 8, 11-13'. Defaults to the empty string, whic
 Paper format. If set, takes priority over [`option: width`] or [`option: height`] options. Defaults to 'Letter'.
 
 ### option: Page.pdf.width
+* langs: js, python
 - `width` <[string]|[float]>
 
 Paper width, accepts values labeled with units.
 
+### option: Page.pdf.width
+* langs: csharp, java
+- `width` <[string]>
+
+Paper width, accepts values labeled with units.
+
 ### option: Page.pdf.height
+* langs: js, python
 - `height` <[string]|[float]>
 
 Paper height, accepts values labeled with units.
 
+### option: Page.pdf.height
+* langs: csharp, java
+- `height` <[string]>
+
+Paper height, accepts values labeled with units.
+
 ### option: Page.pdf.margin
+* langs: js, python
 - `margin` <[Object]>
   - `top` <[string]|[float]> Top margin, accepts values labeled with units. Defaults to `0`.
   - `right` <[string]|[float]> Right margin, accepts values labeled with units. Defaults to `0`.
   - `bottom` <[string]|[float]> Bottom margin, accepts values labeled with units. Defaults to `0`.
   - `left` <[string]|[float]> Left margin, accepts values labeled with units. Defaults to `0`.
+
+Paper margins, defaults to none.
+
+### option: Page.pdf.margin
+* langs: csharp, java
+- `margin` <[Object]>
+  - `top` <[string]> Top margin, accepts values labeled with units. Defaults to `0`.
+  - `right` <[string]> Right margin, accepts values labeled with units. Defaults to `0`.
+  - `bottom` <[string]> Bottom margin, accepts values labeled with units. Defaults to `0`.
+  - `left` <[string]> Left margin, accepts values labeled with units. Defaults to `0`.
 
 Paper margins, defaults to none.
 
@@ -1732,6 +1766,32 @@ Time to wait between `keydown` and `keyup` in milliseconds. Defaults to 0.
 
 ### option: Page.press.timeout = %%-input-timeout-%%
 
+## async method: Page.querySelector
+* langs:
+  - alias-python: query_selector
+  - alias-js: $
+- returns: <[null]|[ElementHandle]>
+
+The method finds an element matching the specified selector within the page. If no elements match the selector, the
+return value resolves to `null`.
+
+Shortcut for main frame's [`method: Frame.querySelector`].
+
+### param: Page.querySelector.selector = %%-query-selector-%%
+
+## async method: Page.querySelectorAll
+* langs:
+  - alias-python: query_selector_all
+  - alias-js: $$
+- returns: <[Array]<[ElementHandle]>>
+
+The method finds all elements matching the specified selector within the page. If no elements match the selector, the
+return value resolves to `[]`.
+
+Shortcut for main frame's [`method: Frame.querySelectorAll`].
+
+### param: Page.querySelectorAll.selector = %%-query-selector-%%
+
 ## async method: Page.reload
 - returns: <[null]|[Response]>
 
@@ -1811,7 +1871,14 @@ Enabling routing disables http cache.
 A glob pattern, regex pattern or predicate receiving [URL] to match while routing.
 
 ### param: Page.route.handler
+* langs: js, python
 - `handler` <[function]\([Route], [Request]\)>
+
+handler function to route the request.
+
+### param: Page.route.handler
+* langs: csharp, java
+- `handler` <[function]\([Route]\)>
 
 handler function to route the request.
 
@@ -1831,10 +1898,7 @@ The file path to save the image to. The screenshot type will be inferred from fi
 relative path, then it is resolved relative to the current working directory. If no path is provided, the image won't be
 saved to the disk.
 
-### option: Page.screenshot.type
-- `type` <"png"|"jpeg">
-
-Specify screenshot type, defaults to `png`.
+### option: Page.screenshot.type = %%-screenshot-type-%%
 
 ### option: Page.screenshot.quality
 - `quality` <[int]>
@@ -2148,7 +2212,14 @@ the [`param: url`].
 A glob pattern, regex pattern or predicate receiving [URL] to match while routing.
 
 ### param: Page.unroute.handler
+* langs: js, python
 - `handler` <[function]\([Route], [Request]\)>
+
+Optional handler function to route the request.
+
+### param: Page.unroute.handler
+* langs: csharp, java
+- `handler` <[function]\([Route]\)>
 
 Optional handler function to route the request.
 
@@ -2167,8 +2238,48 @@ Video object associated with this page.
   - `width` <[int]> page width in pixels.
   - `height` <[int]> page height in pixels.
 
+## method: Page.waitForClose
+* langs: csharp, java
+- returns: <[Page]>
+
+Performs action and waits for the Page to close.
+
+### option: Page.waitForClose.timeout = %%-wait-for-event-timeout-%%
+
+## async method: Page.waitForConsoleMessage
+* langs: csharp, java, python
+  - alias-python: expect_console_message
+- returns: <[ConsoleMessage]>
+
+Performs action and waits for a [ConoleMessage] to be logged by in the page. If predicate is provided, it passes
+[ConsoleMessage] value into the `predicate` function and waits for `predicate(message)` to return a truthy value.
+Will throw an error if the page is closed before the console event is fired.
+
+### option: Page.waitForConsoleMessage.predicate =
+- `predicate` <[function]\([ConsoleMessage]\):[boolean]>
+
+Receives the [ConsoleMessage] object and resolves to truthy value when the waiting should resolve.
+
+### option: Page.waitForConsoleMessage.timeout = %%-wait-for-event-timeout-%%
+
+## async method: Page.waitForDownload
+* langs: csharp, java, python
+  - alias-python: expect_download
+- returns: <[Download]>
+
+Performs action and waits for a new [Download]. If predicate is provided, it passes
+[Download] value into the `predicate` function and waits for `predicate(download)` to return a truthy value.
+Will throw an error if the page is closed before the download event is fired.
+
+### option: Page.waitForDownload.predicate =
+- `predicate` <[function]\([Download]\):[boolean]>
+
+Receives the [Download] object and resolves to truthy value when the waiting should resolve.
+
+### option: Page.waitForDownload.timeout = %%-wait-for-event-timeout-%%
+
 ## async method: Page.waitForEvent
-* langs:
+* langs: csharp, js, python
   - alias-python: expect_event
 - returns: <[any]>
 
@@ -2205,10 +2316,26 @@ frame = event_info.value
 
 Either a predicate that receives an event or an options object. Optional.
 
+## async method: Page.waitForFileChooser
+* langs: csharp, java, python
+  - alias-python: expect_file_chooser
+- returns: <[FileChooser]>
+
+Performs action and waits for a new [FileChooser] to be created. If predicate is provided, it passes
+[FileChooser] value into the `predicate` function and waits for `predicate(fileChooser)` to return a truthy value.
+Will throw an error if the page is closed before the file chooser is opened.
+
+### option: Page.waitForFileChooser.predicate =
+- `predicate` <[function]\([FileChooser]\):[boolean]>
+
+Receives the [FileChooser] object and resolves to truthy value when the waiting should resolve.
+
+### option: Page.waitForFileChooser.timeout = %%-wait-for-event-timeout-%%
+
 ## async method: Page.waitForFunction
 - returns: <[JSHandle]>
 
-Returns when the [`param: pageFunction`] returns a truthy value. It resolves to a JSHandle of the truthy value.
+Returns when the [`param: expression`] returns a truthy value. It resolves to a JSHandle of the truthy value.
 
 The [`method: Page.waitForFunction`] can be used to observe viewport size change:
 
@@ -2233,7 +2360,7 @@ async def run(playwright):
     webkit = playwright.webkit
     browser = await webkit.launch()
     page = await browser.new_page()
-    await page.evaluate("window.x = 0; setTimeout(() => { window.x = 100 }, 1000);", force_expr=True)
+    await page.evaluate("window.x = 0; setTimeout(() => { window.x = 100 }, 1000);")
     await page.wait_for_function("() => window.x > 0")
     await browser.close()
 
@@ -2250,7 +2377,7 @@ def run(playwright):
     webkit = playwright.webkit
     browser = webkit.launch()
     page = browser.new_page()
-    page.evaluate("window.x = 0; setTimeout(() => { window.x = 100 }, 1000);", force_expr=True)
+    page.evaluate("window.x = 0; setTimeout(() => { window.x = 100 }, 1000);")
     page.wait_for_function("() => window.x > 0")
     browser.close()
 
@@ -2277,23 +2404,16 @@ page.wait_for_function("selector => !!document.querySelector(selector)", selecto
 
 Shortcut for main frame's [`method: Frame.waitForFunction`].
 
-### param: Page.waitForFunction.pageFunction
-* langs: js
-- `pageFunction` <[function]|[string]>
-
-Function to be evaluated in browser context
+### param: Page.waitForFunction.expression = %%-evaluate-expression-%%
 
 ### param: Page.waitForFunction.arg
 - `arg` <[EvaluationArgument]>
 
-Optional argument to pass to [`param: pageFunction`]
+Optional argument to pass to [`param: expression`].
 
-### option: Page.waitForFunction.polling
-- `polling` <[float]|"raf">
+### option: Page.waitForFunction.polling = %%-js-python-wait-for-function-polling-%%
 
-If [`option: polling`] is `'raf'`, then [`param: pageFunction`] is constantly executed in `requestAnimationFrame`
-callback. If [`option: polling`] is a number, then it is treated as an interval in milliseconds at which the function
-would be executed. Defaults to `raf`.
+### option: Page.waitForFunction.polling = %%-csharp-java-wait-for-function-polling-%%
 
 ### option: Page.waitForFunction.timeout = %%-wait-for-timeout-%%
 
@@ -2396,6 +2516,22 @@ Shortcut for main frame's [`method: Frame.waitForNavigation`].
 ### option: Page.waitForNavigation.url = %%-wait-for-navigation-url-%%
 
 ### option: Page.waitForNavigation.waitUntil = %%-navigation-wait-until-%%
+
+## async method: Page.waitForPopup
+* langs: csharp, java, python
+  - alias-python: expect_popup
+- returns: <[Page]>
+
+Performs action and waits for a popup [Page]. If predicate is provided, it passes
+[Popup] value into the `predicate` function and waits for `predicate(page)` to return a truthy value.
+Will throw an error if the page is closed before the popup event is fired.
+
+### option: Page.waitForPopup.predicate =
+- `predicate` <[function]\([Page]\):[boolean]>
+
+Receives the [Page] object and resolves to truthy value when the waiting should resolve.
+
+### option: Page.waitForPopup.timeout = %%-wait-for-event-timeout-%%
 
 ## async method: Page.waitForRequest
 * langs:
@@ -2580,6 +2716,37 @@ Shortcut for main frame's [`method: Frame.waitForTimeout`].
 - `timeout` <[float]>
 
 A timeout to wait for
+
+## async method: Page.waitForWebSocket
+* langs: csharp, java
+- returns: <[WebSocket]>
+
+Performs action and waits for a new [WebSocket]. If predicate is provided, it passes
+[WebSocket] value into the `predicate` function and waits for `predicate(webSocket)` to return a truthy value.
+Will throw an error if the page is closed before the WebSocket event is fired.
+
+### option: Page.waitForWebSocket.predicate =
+- `predicate` <[function]\([WebSocket]\):[boolean]>
+
+Receives the [WebSocket] object and resolves to truthy value when the waiting should resolve.
+
+### option: Page.waitForWebSocket.timeout = %%-wait-for-event-timeout-%%
+
+## async method: Page.waitForWorker
+* langs: csharp, java, python
+  - alias-python: expect_worker
+- returns: <[Worker]>
+
+Performs action and waits for a new [Worker]. If predicate is provided, it passes
+[Worker] value into the `predicate` function and waits for `predicate(worker)` to return a truthy value.
+Will throw an error if the page is closed before the worker event is fired.
+
+### option: Page.waitForWorker.predicate =
+- `predicate` <[function]\([Worker]\):[boolean]>
+
+Receives the [Worker] object and resolves to truthy value when the waiting should resolve.
+
+### option: Page.waitForWorker.timeout = %%-wait-for-event-timeout-%%
 
 ## method: Page.workers
 - returns: <[Array]<[Worker]>>

@@ -44,8 +44,12 @@ class ApiParser {
     md.visitAll(api, node => {
       if (node.type === 'h1')
         this.parseClass(node);
+    });
+    md.visitAll(api, node => {
       if (node.type === 'h2')
         this.parseMember(node);
+    });
+    md.visitAll(api, node => {
       if (node.type === 'h3')
         this.parseArgument(node);
     });
@@ -99,8 +103,8 @@ class ApiParser {
         member.async = true;
     }
     const clazz = this.classes.get(match[2]);
-    const existingMember = clazz.membersArray.find(m => m.name === name && m.kind === "method");
-    if (existingMember) {
+    const existingMember = clazz.membersArray.find(m => m.name === name && m.kind === member.kind);
+    if (existingMember && isTypeOverride(existingMember, member)) {
       for (const lang of member.langs.only) {
         existingMember.langs.types = existingMember.langs.types || {};
         existingMember.langs.types[lang] = returnType;
@@ -115,14 +119,31 @@ class ApiParser {
    */
   parseArgument(spec) {
     const match = spec.text.match(/(param|option): ([^.]+)\.([^.]+)\.(.*)/);
+    if(!match)
+      throw `Something went wrong with matching ${spec.text}`;
     const clazz = this.classes.get(match[2]);
     if (!clazz)
       throw new Error('Invalid class ' + match[2]);
-    const method = clazz.membersArray.find(m => m.kind === 'method' && m.name === match[3]);
+    const method = clazz.membersArray.find(m => m.kind === 'method' && m.alias === match[3]);
     if (!method)
       throw new Error('Invalid method ' + match[2] + '.' + match[3]);
+    const name = match[4];
+    if (!name)
+      throw new Error('Invalid member name ' + spec.text);
     if (match[1] === 'param') {
-      method.argsArray.push(this.parseProperty(spec));
+      const arg = this.parseProperty(spec);
+      arg.name = name;
+      const existingArg = method.argsArray.find(m => m.name === arg.name);
+      if (existingArg && isTypeOverride(existingArg, arg)) {
+        if (!arg.langs || !arg.langs.only)
+          throw new Error('Override does not have lang: ' + spec.text);
+        for (const lang of arg.langs.only) {
+          existingArg.langs.overrides = existingArg.langs.overrides || {};
+          existingArg.langs.overrides[lang] = arg;
+        }
+      } else {
+        method.argsArray.push(arg);
+      }
     } else {
       let options = method.argsArray.find(o => o.name === 'options');
       if (!options) {
@@ -300,9 +321,10 @@ function extractLangs(spec) {
         aliases[match[1].trim()] = match[2].trim();
     }
     return {
-      only: only ? only.split(',') : undefined,
+      only: only ? only.split(',').map(l => l.trim()) : undefined,
       aliases,
-      types: {}
+      types: {},
+      overrides: {}
     };
   }
   return {};
@@ -314,6 +336,22 @@ function extractLangs(spec) {
  */
 function childrenWithoutProperties(spec) {
   return spec.children.filter(c => c.liType !== 'bullet' || !c.text.startsWith('langs'));
+}
+
+/**
+ * @param {Documentation.Member} existingMember
+ * @param {Documentation.Member} member
+ * @returns {boolean}
+ */
+function isTypeOverride(existingMember, member) {
+  if (!existingMember.langs.only)
+    return true;
+  if (member.langs.only.every(l => existingMember.langs.only.includes(l))) {
+    return true;
+  } else if (member.langs.only.some(l => existingMember.langs.only.includes(l))) {
+    throw new Error(`Ambiguous language override for: ${member.name}`);
+  }
+  return false;
 }
 
 module.exports = { parseApi };

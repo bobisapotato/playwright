@@ -33,15 +33,25 @@ fi
 
 BROWSER_NAME=""
 EXTRA_BUILD_ARGS=""
+EXTRA_ARCHIVE_ARGS=""
 BUILD_FLAVOR="$1"
 BUILD_BLOB_NAME=""
 EXPECTED_HOST_OS=""
 EXPECTED_HOST_OS_VERSION=""
 EXPECTED_ARCH="x86_64"
+
+# ===========================
+#    WINLDD COMPILATION
+# ===========================
 if [[ "$BUILD_FLAVOR" == "winldd-win64" ]]; then
   BROWSER_NAME="winldd"
   EXPECTED_HOST_OS="MINGW"
   BUILD_BLOB_NAME="winldd-win64.zip"
+
+
+# ===========================
+#    FFMPEG COMPILATION
+# ===========================
 elif [[ "$BUILD_FLAVOR" == "ffmpeg-mac" ]]; then
   BROWSER_NAME="ffmpeg"
   EXTRA_BUILD_ARGS="--mac"
@@ -66,61 +76,115 @@ elif [[ "$BUILD_FLAVOR" == "ffmpeg-cross-compile-win64" ]]; then
   EXPECTED_HOST_OS="Ubuntu"
   EXPECTED_HOST_OS_VERSION="20.04"
   BUILD_BLOB_NAME="ffmpeg-win64.zip"
+
+# ===========================
+#    CHROMIUM COMPILATION
+# ===========================
+elif [[ "$BUILD_FLAVOR" == "chromium-win32" ]]; then
+  BROWSER_NAME="chromium"
+  EXTRA_BUILD_ARGS="--compile-win32"
+  EXTRA_ARCHIVE_ARGS="--compile-win32"
+  EXPECTED_HOST_OS="MINGW"
+  BUILD_BLOB_NAME="chromium-win32.zip"
+elif [[ "$BUILD_FLAVOR" == "chromium-win64" ]]; then
+  BROWSER_NAME="chromium"
+  EXTRA_BUILD_ARGS="--compile-win64"
+  EXTRA_ARCHIVE_ARGS="--compile-win64"
+  EXPECTED_HOST_OS="MINGW"
+  BUILD_BLOB_NAME="chromium-win64.zip"
+elif [[ "$BUILD_FLAVOR" == "chromium-mac" ]]; then
+  BROWSER_NAME="chromium"
+  EXTRA_BUILD_ARGS="--compile-mac"
+  EXTRA_ARCHIVE_ARGS="--compile-mac"
+  EXPECTED_HOST_OS="Darwin"
+  EXPECTED_HOST_OS_VERSION="10.15"
+  BUILD_BLOB_NAME="chromium-mac.zip"
 elif [[ "$BUILD_FLAVOR" == "chromium-mac-arm64" ]]; then
   BROWSER_NAME="chromium"
   EXTRA_BUILD_ARGS="--compile-mac-arm64"
+  EXTRA_ARCHIVE_ARGS="--compile-mac-arm64"
   EXPECTED_HOST_OS="Darwin"
   EXPECTED_HOST_OS_VERSION="10.15"
   BUILD_BLOB_NAME="chromium-mac-arm64.zip"
+elif [[ "$BUILD_FLAVOR" == "chromium-linux" ]]; then
+  BROWSER_NAME="chromium"
+  EXTRA_BUILD_ARGS="--compile-linux"
+  EXTRA_ARCHIVE_ARGS="--compile-linux"
+  EXPECTED_HOST_OS="Ubuntu"
+  EXPECTED_HOST_OS_VERSION="18.04"
+  BUILD_BLOB_NAME="chromium-linux.zip"
+
+
+# ===========================
+#    CHROMIUM MIRRORING
+# ===========================
 elif [[ "$BUILD_FLAVOR" == "chromium-linux-mirror-to-cdn" ]]; then
   BROWSER_NAME="chromium"
   EXTRA_BUILD_ARGS="--mirror-linux"
+  EXTRA_ARCHIVE_ARGS="--mirror-linux"
   EXPECTED_HOST_OS="Ubuntu"
   EXPECTED_HOST_OS_VERSION="18.04"
   BUILD_BLOB_NAME="chromium-linux.zip"
 elif [[ "$BUILD_FLAVOR" == "chromium-mac-mirror-to-cdn" ]]; then
   BROWSER_NAME="chromium"
   EXTRA_BUILD_ARGS="--mirror-mac"
+  EXTRA_ARCHIVE_ARGS="--mirror-mac"
   EXPECTED_HOST_OS="Ubuntu"
   EXPECTED_HOST_OS_VERSION="18.04"
   BUILD_BLOB_NAME="chromium-mac.zip"
 elif [[ "$BUILD_FLAVOR" == "chromium-win32-mirror-to-cdn" ]]; then
   BROWSER_NAME="chromium"
   EXTRA_BUILD_ARGS="--mirror-win32"
+  EXTRA_ARCHIVE_ARGS="--mirror-win32"
   EXPECTED_HOST_OS="Ubuntu"
   EXPECTED_HOST_OS_VERSION="18.04"
   BUILD_BLOB_NAME="chromium-win32.zip"
 elif [[ "$BUILD_FLAVOR" == "chromium-win64-mirror-to-cdn" ]]; then
   BROWSER_NAME="chromium"
   EXTRA_BUILD_ARGS="--mirror-win64"
+  EXTRA_ARCHIVE_ARGS="--mirror-win64"
   EXPECTED_HOST_OS="Ubuntu"
   EXPECTED_HOST_OS_VERSION="18.04"
   BUILD_BLOB_NAME="chromium-win64.zip"
+
+
+# ===========================
+#    FIREFOX COMPILATION
+# ===========================
 elif [[ "$BUILD_FLAVOR" == "firefox-ubuntu-18.04" ]]; then
   BROWSER_NAME="firefox"
+  EXTRA_BUILD_ARGS="--full"
   EXPECTED_HOST_OS="Ubuntu"
   EXPECTED_HOST_OS_VERSION="18.04"
   BUILD_BLOB_NAME="firefox-ubuntu-18.04.zip"
 elif [[ "$BUILD_FLAVOR" == "firefox-mac-10.14" ]]; then
   BROWSER_NAME="firefox"
+  EXTRA_BUILD_ARGS="--full"
   EXPECTED_HOST_OS="Darwin"
   EXPECTED_HOST_OS_VERSION="10.14"
   BUILD_BLOB_NAME="firefox-mac-10.14.zip"
 elif [[ "$BUILD_FLAVOR" == "firefox-mac-11.0-arm64" ]]; then
   BROWSER_NAME="firefox"
+  EXTRA_BUILD_ARGS="--full"
   EXPECTED_HOST_OS="Darwin"
   EXPECTED_HOST_OS_VERSION="11.0"
   EXPECTED_ARCH="arm64"
   BUILD_BLOB_NAME="firefox-mac-11.0-arm64.zip"
 elif [[ "$BUILD_FLAVOR" == "firefox-win32" ]]; then
   BROWSER_NAME="firefox"
+  EXTRA_BUILD_ARGS="--full"
   EXPECTED_HOST_OS="MINGW"
   BUILD_BLOB_NAME="firefox-win32.zip"
 elif [[ "$BUILD_FLAVOR" == "firefox-win64" ]]; then
   BROWSER_NAME="firefox"
-  EXTRA_BUILD_ARGS="--win64"
+  EXTRA_BUILD_ARGS="--win64 --full"
   EXPECTED_HOST_OS="MINGW"
   BUILD_BLOB_NAME="firefox-win64.zip"
+
+
+# ===========================
+#    WEBKIT COMPILATION
+# ===========================
 elif [[ "$BUILD_FLAVOR" == "webkit-ubuntu-18.04" ]]; then
   BROWSER_NAME="webkit"
   EXTRA_BUILD_ARGS="--full"
@@ -208,11 +272,7 @@ if ! [[ ($2 == '-f') || ($2 == '--force') ]]; then
   if ./upload.sh "${BUILD_BLOB_PATH}" --check; then
     echo "Build is already uploaded - no changes."
     exit 0
-  elif ./upload.sh "${LOG_BLOB_PATH}" --check; then
-    echo "This build has already been attempted - skip building."
-    exit 0
   fi
-  echo "Build is missing and has not been attempted - rebuilding"
 else
   echo "Force-rebuilding the build."
 fi
@@ -234,7 +294,7 @@ function generate_and_upload_browser_build {
   fi
 
   echo "-- archiving to $ZIP_PATH"
-  if ! ./$BROWSER_NAME/archive.sh $ZIP_PATH; then
+  if ! ./$BROWSER_NAME/archive.sh $ZIP_PATH "$EXTRA_ARCHIVE_ARGS"; then
     return 23
   fi
 
@@ -251,12 +311,12 @@ send_telegram_message "$BUILD_ALIAS -- started"
 
 if generate_and_upload_browser_build 2>&1 | ./sanitize_and_compress_log.js $LOG_PATH; then
   # Report successful build. Note: we don't know how to get zip size on MINGW.
-  if [[ $(uname) == MINGW* ]]; then
-    send_telegram_message "$BUILD_ALIAS -- uploaded"
-  else
-    UPLOAD_SIZE=$(du -h "$ZIP_PATH" | awk '{print $1}')
-    send_telegram_message "$BUILD_ALIAS -- $UPLOAD_SIZE uploaded"
+  UPLOAD_SIZE=""
+  if command -v du >/dev/null && command -v awk >/dev/null; then
+    UPLOAD_SIZE="$(du -h "$ZIP_PATH" | awk '{print $1}') "
   fi
+  send_telegram_message "$BUILD_ALIAS -- ${UPLOAD_SIZE}uploaded"
+
   # Check if we uploaded the last build.
   if ./tools/check_cdn.sh $BROWSER_NAME --has-all-builds; then
     LAST_COMMIT_MESSAGE=$(git log --format=%s -n 1 HEAD -- ./$BROWSER_NAME/BUILD_NUMBER)
@@ -284,5 +344,6 @@ else
   # Upload logs only in case of failure and report failure.
   ./upload.sh ${LOG_BLOB_PATH} ${LOG_PATH} || true
   send_telegram_message "$BUILD_ALIAS -- ${FAILED_STEP} failed! ❌ <a href='https://playwright.azureedge.net/builds/${LOG_BLOB_PATH}'>${LOG_BLOB_NAME}</a>"
+  exit 1
 fi
 

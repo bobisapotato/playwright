@@ -16,28 +16,18 @@
 
 import { TimeoutError } from '../utils/errors';
 import { assert, monotonicTime } from '../utils/utils';
-import { rewriteErrorMessage } from '../utils/stackTrace';
-import { debugLogger, LogName } from '../utils/debugLogger';
-
-export type ProgressResult = {
-  logs: string[],
-  startTime: number,
-  endTime: number,
-  error?: Error,
-};
+import { LogName } from '../utils/debugLogger';
+import { CallMetadata, Instrumentation, SdkObject } from './instrumentation';
 
 export interface Progress {
-  readonly aborted: Promise<void>;
   log(message: string): void;
   timeUntilDeadline(): number;
   isRunning(): boolean;
   cleanupWhenAborted(cleanup: () => any): void;
   throwIfAborted(): void;
-}
-
-export async function runAbortableTask<T>(task: (progress: Progress) => Promise<T>, timeout: number): Promise<T> {
-  const controller = new ProgressController();
-  return controller.run(task, timeout);
+  beforeInputAction(): Promise<void>;
+  afterInputAction(): Promise<void>;
+  metadata: CallMetadata;
 }
 
 export class ProgressController {
@@ -46,33 +36,27 @@ export class ProgressController {
   private _forceAbort: (error: Error) => void = () => {};
   private _forceAbortPromise: Promise<any>;
 
-  // Promise and callback that resolve once the progress is aborted.
-  // This includes the force abort and also rejection of the task itself (failure).
-  private _aborted = () => {};
-  private _abortedPromise: Promise<void>;
-
   // Cleanups to be run only in the case of abort.
   private _cleanups: (() => any)[] = [];
 
-  private _logName: LogName = 'api';
+  private _logName = 'api';
   private _state: 'before' | 'running' | 'aborted' | 'finished' = 'before';
   private _deadline: number = 0;
   private _timeout: number = 0;
-  private _logRecording: string[] = [];
-  private _listener?: (result: ProgressResult) => Promise<void>;
+  readonly metadata: CallMetadata;
+  readonly instrumentation: Instrumentation;
+  readonly sdkObject: SdkObject;
 
-  constructor() {
+  constructor(metadata: CallMetadata, sdkObject: SdkObject) {
+    this.metadata = metadata;
+    this.sdkObject = sdkObject;
+    this.instrumentation = sdkObject.instrumentation;
     this._forceAbortPromise = new Promise((resolve, reject) => this._forceAbort = reject);
-    this._forceAbortPromise.catch(e => null);  // Prevent unhandle promsie rejection.
-    this._abortedPromise = new Promise(resolve => this._aborted = resolve);
+    this._forceAbortPromise.catch(e => null);  // Prevent unhandled promise rejection.
   }
 
   setLogName(logName: LogName) {
     this._logName = logName;
-  }
-
-  setListener(listener: (result: ProgressResult) => Promise<void>) {
-    this._listener = listener;
   }
 
   async run<T>(task: (progress: Progress) => Promise<T>, timeout?: number): Promise<T> {
@@ -85,11 +69,11 @@ export class ProgressController {
     this._state = 'running';
 
     const progress: Progress = {
-      aborted: this._abortedPromise,
       log: message => {
         if (this._state === 'running')
-          this._logRecording.push(message);
-        debugLogger.log(this._logName, message);
+          this.metadata.log.push(message);
+        // Note: we might be sending logs after progress has finished, for example browser logs.
+        this.instrumentation.onCallLog(this._logName, message, this.sdkObject, this.metadata);
       },
       timeUntilDeadline: () => this._deadline ? this._deadline - monotonicTime() : 2147483647, // 2^31-1 safe setTimeout in Node.
       isRunning: () => this._state === 'running',
@@ -103,44 +87,28 @@ export class ProgressController {
         if (this._state === 'aborted')
           throw new AbortedError();
       },
+      beforeInputAction: async () => {
+        await this.instrumentation.onBeforeInputAction(this.sdkObject, this.metadata);
+      },
+      afterInputAction: async () => {
+        await this.instrumentation.onAfterInputAction(this.sdkObject, this.metadata);
+      },
+      metadata: this.metadata
     };
 
     const timeoutError = new TimeoutError(`Timeout ${this._timeout}ms exceeded.`);
     const timer = setTimeout(() => this._forceAbort(timeoutError), progress.timeUntilDeadline());
-    const startTime = monotonicTime();
     try {
       const promise = task(progress);
       const result = await Promise.race([promise, this._forceAbortPromise]);
-      clearTimeout(timer);
       this._state = 'finished';
-      if (this._listener) {
-        await this._listener({
-          startTime,
-          endTime: monotonicTime(),
-          logs: this._logRecording,
-        });
-      }
-      this._logRecording = [];
       return result;
     } catch (e) {
-      this._aborted();
-      clearTimeout(timer);
       this._state = 'aborted';
       await Promise.all(this._cleanups.splice(0).map(cleanup => runCleanup(cleanup)));
-      if (this._listener) {
-        await this._listener({
-          startTime,
-          endTime: monotonicTime(),
-          logs: this._logRecording,
-          error: e,
-        });
-      }
-      rewriteErrorMessage(e,
-          e.message +
-          formatLogRecording(this._logRecording) +
-          kLoggingNote);
-      this._logRecording = [];
       throw e;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -154,18 +122,6 @@ async function runCleanup(cleanup: () => any) {
     await cleanup();
   } catch (e) {
   }
-}
-
-const kLoggingNote = `\nNote: use DEBUG=pw:api environment variable and rerun to capture Playwright logs.`;
-
-function formatLogRecording(log: string[]): string {
-  if (!log.length)
-    return '';
-  const header = ` logs `;
-  const headerLength = 60;
-  const leftLength = (headerLength - header.length) / 2;
-  const rightLength = headerLength - header.length - leftLength;
-  return `\n${'='.repeat(leftLength)}${header}${'='.repeat(rightLength)}\n${log.join('\n')}\n${'='.repeat(headerLength)}`;
 }
 
 class AbortedError extends Error {}
