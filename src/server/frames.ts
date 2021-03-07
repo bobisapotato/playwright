@@ -411,9 +411,11 @@ export class Frame extends SdkObject {
   private _setContentCounter = 0;
   readonly _detachedPromise: Promise<void>;
   private _detachedCallback = () => {};
+  readonly uniqueId: string;
 
   constructor(page: Page, id: string, parentFrame: Frame | null) {
     super(page);
+    this.uniqueId = parentFrame ? `frame@${page.uniqueId}/${id}` : page.uniqueId;
     this.attribution.frame = this;
     this._id = id;
     this._page = page;
@@ -481,17 +483,22 @@ export class Frame extends SdkObject {
     this._subtreeLifecycleEvents = events;
   }
 
-  setupNavigationProgressController(metadata: CallMetadata): ProgressController {
-    const controller = new ProgressController(metadata, this);
-    this._page._disconnectedPromise.then(() => controller.abort(new Error('Navigation failed because page was closed!')));
-    this._page._crashedPromise.then(() => controller.abort(new Error('Navigation failed because page crashed!')));
-    this._detachedPromise.then(() => controller.abort(new Error('Navigating frame was detached!')));
-    return controller;
+  async raceNavigationAction<T>(action: () => Promise<T>): Promise<T> {
+    return Promise.race([
+      this._page._disconnectedPromise.then(() => { throw new Error('Navigation failed because page was closed!'); }),
+      this._page._crashedPromise.then(() => { throw new Error('Navigation failed because page crashed!'); }),
+      this._detachedPromise.then(() => { throw new Error('Navigating frame was detached!'); }),
+      action(),
+    ]);
   }
 
   async goto(metadata: CallMetadata, url: string, options: types.GotoOptions = {}): Promise<network.Response | null> {
-    const controller = this.setupNavigationProgressController(metadata);
-    return controller.run(async progress => {
+    const controller = new ProgressController(metadata, this);
+    return controller.run(progress => this._goto(progress, url, options), this._page._timeoutSettings.navigationTimeout(options));
+  }
+
+  private async _goto(progress: Progress, url: string, options: types.GotoOptions): Promise<network.Response | null> {
+    return this.raceNavigationAction(async () => {
       const waitUntil = verifyLifecycle('waitUntil', options.waitUntil === undefined ? 'load' : options.waitUntil);
       progress.log(`navigating to "${url}", waiting until "${waitUntil}"`);
       const headers = this._page._state.extraHTTPHeaders || [];
@@ -534,7 +541,7 @@ export class Frame extends SdkObject {
       const response = request ? request._finalRequest().response() : null;
       await this._page._doSlowMo();
       return response;
-    }, this._page._timeoutSettings.navigationTimeout(options));
+    });
   }
 
   async _waitForNavigation(progress: Progress, options: types.NavigateOptions): Promise<network.Response | null> {
@@ -576,6 +583,10 @@ export class Frame extends SdkObject {
 
   _mainContext(): Promise<dom.FrameExecutionContext> {
     return this._context('main');
+  }
+
+  _existingMainContext(): dom.FrameExecutionContext | null {
+    return this._contextData.get('main')?.context || null;
   }
 
   _utilityContext(): Promise<dom.FrameExecutionContext> {
@@ -670,8 +681,8 @@ export class Frame extends SdkObject {
   }
 
   async setContent(metadata: CallMetadata, html: string, options: types.NavigateOptions = {}): Promise<void> {
-    const controller = this.setupNavigationProgressController(metadata);
-    return controller.run(async progress => {
+    const controller = new ProgressController(metadata, this);
+    return controller.run(progress => this.raceNavigationAction(async () => {
       const waitUntil = options.waitUntil === undefined ? 'load' : options.waitUntil;
       progress.log(`setting frame content, waiting until "${waitUntil}"`);
       const tag = `--playwright--set--content--${this._id}--${++this._setContentCounter}--`;
@@ -692,7 +703,7 @@ export class Frame extends SdkObject {
       }, { html, tag });
       await Promise.all([contentPromise, lifecyclePromise]);
       await this._page._doSlowMo();
-    }, this._page._timeoutSettings.navigationTimeout(options));
+    }), this._page._timeoutSettings.navigationTimeout(options));
   }
 
   name(): string {

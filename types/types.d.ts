@@ -2578,12 +2578,12 @@ export interface Page {
    */
   setInputFiles(selector: string, files: string|Array<string>|{
     /**
-     * [File] name
+     * File name
      */
     name: string;
 
     /**
-     * [File] type
+     * File type
      */
     mimeType: string;
 
@@ -2593,12 +2593,12 @@ export interface Page {
     buffer: Buffer;
   }|Array<{
     /**
-     * [File] name
+     * File name
      */
     name: string;
 
     /**
-     * [File] type
+     * File type
      */
     mimeType: string;
 
@@ -3271,7 +3271,9 @@ export interface Frame {
    * The only difference between
    * [frame.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevaluatepagefunction-arg) and
    * [frame.evaluateHandle(pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevaluatehandlepagefunction-arg)
-   * is that [method: Frame.evaluateHandle`] returns [JSHandle].
+   * is that
+   * [frame.evaluateHandle(pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevaluatehandlepagefunction-arg)
+   * returns [JSHandle].
    * 
    * If the function, passed to the
    * [frame.evaluateHandle(pageFunction[, arg])](https://playwright.dev/docs/api/class-frame#frameevaluatehandlepagefunction-arg),
@@ -4194,12 +4196,12 @@ export interface Frame {
    */
   setInputFiles(selector: string, files: string|Array<string>|{
     /**
-     * [File] name
+     * File name
      */
     name: string;
 
     /**
-     * [File] type
+     * File type
      */
     mimeType: string;
 
@@ -4209,12 +4211,12 @@ export interface Frame {
     buffer: Buffer;
   }|Array<{
     /**
-     * [File] name
+     * File name
      */
     name: string;
 
     /**
-     * [File] type
+     * File type
      */
     mimeType: string;
 
@@ -4457,7 +4459,7 @@ export interface Frame {
     timeout?: number;
 
     /**
-     * URL string, URL regex pattern or predicate receiving [URL] to match while waiting for the navigation.
+     * A glob pattern, regex pattern or predicate receiving [URL] to match while waiting for the navigation.
      */
     url?: string|RegExp|((url: URL) => boolean);
 
@@ -4576,11 +4578,11 @@ export interface BrowserContext {
    * done and its response has started loading in the popup.
    * 
    * ```js
-   * const [page] = await Promise.all([
+   * const [newPage] = await Promise.all([
    *   context.waitForEvent('page'),
    *   page.click('a[target=_blank]'),
    * ]);
-   * console.log(await page.evaluate('location.href'));
+   * console.log(await newPage.evaluate('location.href'));
    * ```
    * 
    * > NOTE: Use
@@ -4607,11 +4609,11 @@ export interface BrowserContext {
    * done and its response has started loading in the popup.
    * 
    * ```js
-   * const [page] = await Promise.all([
+   * const [newPage] = await Promise.all([
    *   context.waitForEvent('page'),
    *   page.click('a[target=_blank]'),
    * ]);
-   * console.log(await page.evaluate('location.href'));
+   * console.log(await newPage.evaluate('location.href'));
    * ```
    * 
    * > NOTE: Use
@@ -4638,11 +4640,11 @@ export interface BrowserContext {
    * done and its response has started loading in the popup.
    * 
    * ```js
-   * const [page] = await Promise.all([
+   * const [newPage] = await Promise.all([
    *   context.waitForEvent('page'),
    *   page.click('a[target=_blank]'),
    * ]);
-   * console.log(await page.evaluate('location.href'));
+   * console.log(await newPage.evaluate('location.href'));
    * ```
    * 
    * > NOTE: Use
@@ -4669,11 +4671,11 @@ export interface BrowserContext {
    * done and its response has started loading in the popup.
    * 
    * ```js
-   * const [page] = await Promise.all([
+   * const [newPage] = await Promise.all([
    *   context.waitForEvent('page'),
    *   page.click('a[target=_blank]'),
    * ]);
-   * console.log(await page.evaluate('location.href'));
+   * console.log(await newPage.evaluate('location.href'));
    * ```
    * 
    * > NOTE: Use
@@ -4700,11 +4702,11 @@ export interface BrowserContext {
    * done and its response has started loading in the popup.
    * 
    * ```js
-   * const [page] = await Promise.all([
+   * const [newPage] = await Promise.all([
    *   context.waitForEvent('page'),
    *   page.click('a[target=_blank]'),
    * ]);
-   * console.log(await page.evaluate('location.href'));
+   * console.log(await newPage.evaluate('location.href'));
    * ```
    * 
    * > NOTE: Use
@@ -4917,7 +4919,7 @@ export interface BrowserContext {
   newPage(): Promise<Page>;
 
   /**
-   * Returns all open pages in the context. 
+   * Returns all open pages in the context.
    */
   pages(): Array<Page>;
 
@@ -5113,11 +5115,11 @@ export interface BrowserContext {
    * done and its response has started loading in the popup.
    * 
    * ```js
-   * const [page] = await Promise.all([
+   * const [newPage] = await Promise.all([
    *   context.waitForEvent('page'),
    *   page.click('a[target=_blank]'),
    * ]);
-   * console.log(await page.evaluate('location.href'));
+   * console.log(await newPage.evaluate('location.href'));
    * ```
    * 
    * > NOTE: Use
@@ -5158,7 +5160,7 @@ export interface Worker {
    * [worker.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-worker#workerevaluatepagefunction-arg)
    * returns a non-[Serializable] value, then
    * [worker.evaluate(pageFunction[, arg])](https://playwright.dev/docs/api/class-worker#workerevaluatepagefunction-arg)
-   * returns `undefined`. Playwright also supports transferring some  additional values that are not serializable by `JSON`:
+   * returns `undefined`. Playwright also supports transferring some additional values that are not serializable by `JSON`:
    * `-0`, `NaN`, `Infinity`, `-Infinity`.
    * @param pageFunction Function to be evaluated in the worker context.
    * @param arg Optional argument to pass to `pageFunction`.
@@ -6021,12 +6023,12 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
    */
   setInputFiles(files: string|Array<string>|{
     /**
-     * [File] name
+     * File name
      */
     name: string;
 
     /**
-     * [File] type
+     * File type
      */
     mimeType: string;
 
@@ -6036,12 +6038,12 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
     buffer: Buffer;
   }|Array<{
     /**
-     * [File] name
+     * File name
      */
     name: string;
 
     /**
-     * [File] type
+     * File type
      */
     mimeType: string;
 
@@ -6362,7 +6364,7 @@ export interface BrowserType<Browser> {
     /**
      * Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. See
      * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#pageemulatemediaoptions) for more details.
-     * Defaults to '`light`'.
+     * Defaults to `'light'`.
      */
     colorScheme?: "light"|"dark"|"no-preference";
 
@@ -7042,6 +7044,9 @@ type AccessibilityNode = {
 export const selectors: Selectors;
 export const devices: Devices & DeviceDescriptor[];
 
+//@ts-ignore this will be any if electron is not installed
+type ElectronType = typeof import('electron');
+
 /**
  * Electron application representation. You can use
  * [electron.launch([options])](https://playwright.dev/docs/api/class-electron#electronlaunchoptions) to obtain the
@@ -7095,8 +7100,8 @@ export interface ElectronApplication {
    * @param pageFunction Function to be evaluated in the worker context.
    * @param arg Optional argument to pass to `pageFunction`.
    */
-  evaluate<R, Arg>(pageFunction: PageFunctionOn<typeof import('electron'), Arg, R>, arg: Arg): Promise<R>;
-  evaluate<R>(pageFunction: PageFunctionOn<typeof import('electron'), void, R>, arg?: any): Promise<R>;
+  evaluate<R, Arg>(pageFunction: PageFunctionOn<ElectronType, Arg, R>, arg: Arg): Promise<R>;
+  evaluate<R>(pageFunction: PageFunctionOn<ElectronType, void, R>, arg?: any): Promise<R>;
 
   /**
    * Returns the return value of `pageFunction` as a [JSHandle].
@@ -7117,8 +7122,8 @@ export interface ElectronApplication {
    * @param pageFunction Function to be evaluated in the worker context.
    * @param arg 
    */
-  evaluateHandle<R, Arg>(pageFunction: PageFunctionOn<typeof import('electron'), Arg, R>, arg: Arg): Promise<SmartHandle<R>>;
-  evaluateHandle<R>(pageFunction: PageFunctionOn<typeof import('electron'), void, R>, arg?: any): Promise<SmartHandle<R>>;
+  evaluateHandle<R, Arg>(pageFunction: PageFunctionOn<ElectronType, Arg, R>, arg: Arg): Promise<SmartHandle<R>>;
+  evaluateHandle<R>(pageFunction: PageFunctionOn<ElectronType, void, R>, arg?: any): Promise<SmartHandle<R>>;
   /**
    * This event is issued when the application closes.
    */
@@ -7523,7 +7528,7 @@ export interface AndroidDevice {
     /**
      * Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. See
      * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#pageemulatemediaoptions) for more details.
-     * Defaults to '`light`'.
+     * Defaults to `'light'`.
      */
     colorScheme?: "light"|"dark"|"no-preference";
 
@@ -8252,7 +8257,7 @@ export interface Browser extends EventEmitter {
     /**
      * Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. See
      * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#pageemulatemediaoptions) for more details.
-     * Defaults to '`light`'.
+     * Defaults to `'light'`.
      */
     colorScheme?: "light"|"dark"|"no-preference";
 
@@ -8624,11 +8629,11 @@ export interface ChromiumBrowserContext extends BrowserContext {
    * done and its response has started loading in the popup.
    * 
    * ```js
-   * const [page] = await Promise.all([
+   * const [newPage] = await Promise.all([
    *   context.waitForEvent('page'),
    *   page.click('a[target=_blank]'),
    * ]);
-   * console.log(await page.evaluate('location.href'));
+   * console.log(await newPage.evaluate('location.href'));
    * ```
    * 
    * > NOTE: Use
@@ -8667,11 +8672,11 @@ export interface ChromiumBrowserContext extends BrowserContext {
    * done and its response has started loading in the popup.
    * 
    * ```js
-   * const [page] = await Promise.all([
+   * const [newPage] = await Promise.all([
    *   context.waitForEvent('page'),
    *   page.click('a[target=_blank]'),
    * ]);
-   * console.log(await page.evaluate('location.href'));
+   * console.log(await newPage.evaluate('location.href'));
    * ```
    * 
    * > NOTE: Use
@@ -8710,11 +8715,11 @@ export interface ChromiumBrowserContext extends BrowserContext {
    * done and its response has started loading in the popup.
    * 
    * ```js
-   * const [page] = await Promise.all([
+   * const [newPage] = await Promise.all([
    *   context.waitForEvent('page'),
    *   page.click('a[target=_blank]'),
    * ]);
-   * console.log(await page.evaluate('location.href'));
+   * console.log(await newPage.evaluate('location.href'));
    * ```
    * 
    * > NOTE: Use
@@ -8753,11 +8758,11 @@ export interface ChromiumBrowserContext extends BrowserContext {
    * done and its response has started loading in the popup.
    * 
    * ```js
-   * const [page] = await Promise.all([
+   * const [newPage] = await Promise.all([
    *   context.waitForEvent('page'),
    *   page.click('a[target=_blank]'),
    * ]);
-   * console.log(await page.evaluate('location.href'));
+   * console.log(await newPage.evaluate('location.href'));
    * ```
    * 
    * > NOTE: Use
@@ -8796,11 +8801,11 @@ export interface ChromiumBrowserContext extends BrowserContext {
    * done and its response has started loading in the popup.
    * 
    * ```js
-   * const [page] = await Promise.all([
+   * const [newPage] = await Promise.all([
    *   context.waitForEvent('page'),
    *   page.click('a[target=_blank]'),
    * ]);
-   * console.log(await page.evaluate('location.href'));
+   * console.log(await newPage.evaluate('location.href'));
    * ```
    * 
    * > NOTE: Use
@@ -8855,11 +8860,11 @@ export interface ChromiumBrowserContext extends BrowserContext {
    * done and its response has started loading in the popup.
    * 
    * ```js
-   * const [page] = await Promise.all([
+   * const [newPage] = await Promise.all([
    *   context.waitForEvent('page'),
    *   page.click('a[target=_blank]'),
    * ]);
-   * console.log(await page.evaluate('location.href'));
+   * console.log(await newPage.evaluate('location.href'));
    * ```
    * 
    * > NOTE: Use
@@ -9049,9 +9054,9 @@ export interface ConsoleMessage {
  *   page.on('dialog', async dialog => {
  *     console.log(dialog.message());
  *     await dialog.dismiss();
- *     await browser.close();
  *   });
- *   page.evaluate(() => alert('1'));
+ *   await page.evaluate(() => alert('1'));
+ *   await browser.close();
  * })();
  * ```
  * 
@@ -9264,12 +9269,12 @@ export interface FileChooser {
    */
   setFiles(files: string|Array<string>|{
     /**
-     * [File] name
+     * File name
      */
     name: string;
 
     /**
-     * [File] type
+     * File type
      */
     mimeType: string;
 
@@ -9279,12 +9284,12 @@ export interface FileChooser {
     buffer: Buffer;
   }|Array<{
     /**
-     * [File] name
+     * File name
      */
     name: string;
 
     /**
-     * [File] type
+     * File type
      */
     mimeType: string;
 
@@ -10352,7 +10357,7 @@ export interface BrowserContextOptions {
   /**
    * Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. See
    * [page.emulateMedia([options])](https://playwright.dev/docs/api/class-page#pageemulatemediaoptions) for more details.
-   * Defaults to '`light`'.
+   * Defaults to `'light'`.
    */
   colorScheme?: "light"|"dark"|"no-preference";
 

@@ -47,6 +47,10 @@ describe('cli codegen', (suite, { browserName, headful, mode }) => {
     # Click text=Submit
     await page.click("text=Submit")`);
 
+    expect(sources.get('<java>').text).toContain(`
+      // Click text=Submit
+      page.click("text=Submit");`);
+
     expect(sources.get('<csharp>').text).toContain(`
 // Click text=Submit
 await page.ClickAsync("text=Submit");`);
@@ -80,6 +84,47 @@ await page.ClickAsync("text=Submit");`);
     expect(sources.get('<javascript>').text).toContain(`
   // Click text=Submit
   await page.click('text=Submit');`);
+    expect(message.text()).toBe('click');
+  });
+
+  it('should work with TrustedTypes', async ({ page, recorder }) => {
+    await recorder.setContentAndWait(`
+      <head>
+        <meta http-equiv="Content-Security-Policy" content="trusted-types unsafe escape; require-trusted-types-for 'script'">
+    </head>
+    <body>
+      <button onclick="console.log('click')">Submit</button>
+    </body>`);
+
+    const selector = await recorder.hoverOverElement('button');
+    expect(selector).toBe('text=Submit');
+
+    const [message, sources] = await Promise.all([
+      page.waitForEvent('console'),
+      recorder.waitForOutput('<javascript>', 'click'),
+      page.dispatchEvent('button', 'click', { detail: 1 })
+    ]);
+
+    expect(sources.get('<javascript>').text).toContain(`
+  // Click text=Submit
+  await page.click('text=Submit');`);
+
+    expect(sources.get('<python>').text).toContain(`
+    # Click text=Submit
+    page.click("text=Submit")`);
+
+    expect(sources.get('<async python>').text).toContain(`
+    # Click text=Submit
+    await page.click("text=Submit")`);
+
+    expect(sources.get('<java>').text).toContain(`
+      // Click text=Submit
+      page.click("text=Submit");`);
+
+    expect(sources.get('<csharp>').text).toContain(`
+// Click text=Submit
+await page.ClickAsync("text=Submit");`);
+
     expect(message.text()).toBe('click');
   });
 
@@ -129,6 +174,9 @@ await page.ClickAsync("text=Submit");`);
     expect(sources.get('<javascript>').text).toContain(`
   // Fill input[name="name"]
   await page.fill('input[name="name"]', 'John');`);
+    expect(sources.get('<java>').text).toContain(`
+      // Fill input[name="name"]
+      page.fill("input[name=\\\"name\\\"]", "John");`);
 
     expect(sources.get('<python>').text).toContain(`
     # Fill input[name="name"]
@@ -178,6 +226,10 @@ await page.FillAsync(\"input[name=\\\"name\\\"]\", \"John\");`);
     expect(sources.get('<javascript>').text).toContain(`
   // Press Enter with modifiers
   await page.press('input[name="name"]', 'Shift+Enter');`);
+
+    expect(sources.get('<java>').text).toContain(`
+      // Press Enter with modifiers
+      page.press("input[name=\\\"name\\\"]", "Shift+Enter");`);
 
     expect(sources.get('<python>').text).toContain(`
     # Press Enter with modifiers
@@ -284,6 +336,10 @@ await page.PressAsync(\"input[name=\\\"name\\\"]\", \"Shift+Enter\");`);
   // Check input[name="accept"]
   await page.check('input[name="accept"]');`);
 
+    expect(sources.get('<java>').text).toContain(`
+      // Check input[name="accept"]
+      page.check("input[name=\\\"accept\\\"]");`);
+
     expect(sources.get('<python>').text).toContain(`
     # Check input[name="accept"]
     page.check(\"input[name=\\\"accept\\\"]\")`);
@@ -333,6 +389,10 @@ await page.CheckAsync(\"input[name=\\\"accept\\\"]\");`);
   // Uncheck input[name="accept"]
   await page.uncheck('input[name="accept"]');`);
 
+    expect(sources.get('<java>').text).toContain(`
+      // Uncheck input[name="accept"]
+      page.uncheck("input[name=\\\"accept\\\"]");`);
+
     expect(sources.get('<python>').text).toContain(`
     # Uncheck input[name="accept"]
     page.uncheck(\"input[name=\\\"accept\\\"]\")`);
@@ -363,6 +423,10 @@ await page.UncheckAsync(\"input[name=\\\"accept\\\"]\");`);
     expect(sources.get('<javascript>').text).toContain(`
   // Select 2
   await page.selectOption('select', '2');`);
+
+    expect(sources.get('<java>').text).toContain(`
+      // Select 2
+      page.selectOption("select", "2");`);
 
     expect(sources.get('<python>').text).toContain(`
     # Select 2
@@ -399,6 +463,12 @@ await page.SelectOptionAsync(\"select\", \"2\");`);
     page.waitForEvent('popup'),
     page.click('text=link')
   ]);`);
+
+    expect(sources.get('<java>').text).toContain(`
+      // Click text=link
+      Page page1 = page.waitForPopup(() -> {
+        page.click("text=link");
+      });`);
 
     expect(sources.get('<python>').text).toContain(`
     # Click text=link
@@ -437,6 +507,11 @@ await Task.WhenAll(
   await page.click('text=link');
   // assert.equal(page.url(), 'about:blank#foo');`);
 
+    expect(sources.get('<java>').text).toContain(`
+      // Click text=link
+      page.click("text=link");
+      // assert page.url().equals("about:blank#foo");`);
+
     expect(sources.get('<python>').text).toContain(`
     # Click text=link
     page.click(\"text=link\")
@@ -474,6 +549,13 @@ await page.ClickAsync(\"text=link\");
     page.waitForNavigation(/*{ url: 'about:blank#foo' }*/),
     page.click('text=link')
   ]);`);
+
+    expect(sources.get('<java>').text).toContain(`
+      // Click text=link
+      // page.waitForNavigation(new Page.WaitForNavigationOptions().setUrl("about:blank#foo"), () ->
+      page.waitForNavigation(() -> {
+        page.click("text=link");
+      });`);
 
     expect(sources.get('<python>').text).toContain(`
     # Click text=link

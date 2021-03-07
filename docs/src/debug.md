@@ -9,6 +9,13 @@ for browser automation.
 
 <!-- TOC -->
 
+## Playwright Inspector
+
+[Playwright Inspector](./inspector.md) is a GUI tool that helps authoring and debugging Playwright scripts. That's our default recommended tool for scripts troubleshooting.
+
+<img width="712" alt="Playwright Inspector" src="https://user-images.githubusercontent.com/883973/108614092-8c478a80-73ac-11eb-9597-67dfce110e00.png"></img>
+
+
 ## Run in headful mode
 
 Playwright runs browsers in headless mode by default. To change this behavior,
@@ -17,6 +24,12 @@ to slow down execution and follow along while debugging.
 
 ```js
 await chromium.launch({ headless: false, slowMo: 100 }); // or firefox, webkit
+```
+
+```java
+chromium.launch(new BrowserType.LaunchOptions() // or firefox, webkit
+  .setHeadless(false)
+  .setSlowMo(100));
 ```
 
 ```python async
@@ -41,9 +54,6 @@ for your Node.js project. Once configured launch the scripts with F5 and use
 breakpoints.
 
 ### Use the new JavaScript debugging terminal
-
-VS Code 1.46+ introduced the new JavaScript debugger that does not require a `launch.json`
-configuration. To use it:
 
 1. Set a breakpoint in VS Code
     * Use the `debugger` keyword or set a breakpoint in the VS Code UI
@@ -71,6 +81,10 @@ In Chromium, you can also open developer tools through a launch option.
 await chromium.launch({ devtools: true });
 ```
 
+```java
+chromium.launch(new BrowserType.LaunchOptions().setDevtools(true));
+```
+
 ```python async
 await chromium.launch(devtools=True)
 
@@ -94,6 +108,15 @@ $ set PWDEBUG=1
 $ npm run test
 ```
 
+```sh java
+# Linux/macOS
+$ PWDEBUG=1 mvn test
+
+# Windows
+$ set PWDEBUG=1
+$ mvn test
+```
+
 ```sh python
 # Linux/macOS
 $ PWDEBUG=1 pytest -s
@@ -109,8 +132,6 @@ With PWDEBUG, the following defaults are configured for you:
 
 * **Run in headful**: With PWDEBUG, browsers always launch in headful mode
 * **Disables timeout**: PWDEBUG sets timeout to 0 (= no timeout)
-* **Preserve DevTools preferences**: When used with `devtools: true`, PWDEBUG
-  preserves the docked/undocked state of Chrome DevTools
 
 ### Debugging Selectors
 
@@ -148,6 +169,15 @@ $ DEBUG=pw:api npm run test
 # Windows
 $ set DEBUG=pw:api
 $ npm run test
+```
+
+```sh java
+# Linux/macOS
+$ DEBUG=pw:api mvn test
+
+# Windows
+$ set DEBUG=pw:api
+$ mvn test
 ```
 
 ```sh python

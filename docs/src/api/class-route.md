@@ -30,7 +30,7 @@ Optional error code. Defaults to `failed`, could be one of the following:
 
 ## async method: Route.continue
 * langs:
-  - alias-csharp: resume
+  - alias-csharp: ResumeAsync
   - alias-java: resume
   - alias-python: continue_
 
@@ -45,6 +45,16 @@ await page.route('**/*', (route, request) => {
     origin: undefined, // remove "origin" header
   };
   route.continue({headers});
+});
+```
+
+```java
+page.route("**/*", route -> {
+  // Override headers
+  Map<String, String> headers = new HashMap<>(route.request().headers());
+  headers.put("foo", "bar"); // set "foo" header
+  headers.remove("origin"); // remove "origin" header
+  route.resume(new Route.ResumeOptions().setHeaders(headers));
 });
 ```
 
@@ -110,6 +120,15 @@ await page.route('**/*', route => {
 });
 ```
 
+```java
+page.route("**/*", route -> {
+  route.fulfill(new Route.FulfillOptions()
+    .setStatus(404)
+    .setContentType("text/plain")
+    .setBody("Not Found!"));
+});
+```
+
 ```python async
 await page.route("**/*", lambda route: route.fulfill(
     status=404,
@@ -128,6 +147,11 @@ An example of serving static file:
 
 ```js
 await page.route('**/xhr_endpoint', route => route.fulfill({ path: 'mock_data.json' }));
+```
+
+```java
+page.route("**/xhr_endpoint", route -> route.fulfill(
+  new Route.FulfillOptions().setPath(Paths.get("mock_data.json")));
 ```
 
 ```python async

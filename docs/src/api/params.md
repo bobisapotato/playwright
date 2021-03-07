@@ -68,8 +68,8 @@ Defaults to `left`.
 
 ## input-files
 - `files` <[path]|[Array]<[path]>|[Object]|[Array]<[Object]>>
-  - `name` <[string]> [File] name
-  - `mimeType` <[string]> [File] type
+  - `name` <[string]> File name
+  - `mimeType` <[string]> File type
   - `buffer` <[Buffer]> File content
 
 ## input-down-up-delay
@@ -340,7 +340,7 @@ Credentials for [HTTP authentication](https://developer.mozilla.org/en-US/docs/W
 - `colorScheme` <[ColorScheme]<"light"|"dark"|"no-preference">>
 
 Emulates `'prefers-colors-scheme'` media feature, supported values are `'light'`, `'dark'`, `'no-preference'`. See
-[`method: Page.emulateMedia`] for more details. Defaults to '`light`'.
+[`method: Page.emulateMedia`] for more details. Defaults to `'light'`.
 
 ## context-option-logger
 * langs: js

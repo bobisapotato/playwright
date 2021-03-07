@@ -14,17 +14,7 @@
  * limitations under the License.
  */
 
-export type NodeSnapshot =
-  // Text node.
-  string |
-  // Subtree reference, "x snapshots ago, node #y". Could point to a text node.
-  // Only nodes that are not references are counted, starting from zero, using post-order traversal.
-  [ [number, number] ] |
-  // Just node name.
-  [ string ] |
-  // Node name, attributes, child nodes.
-  // Unfortunately, we cannot make this type definition recursive, therefore "any".
-  [ string, { [attr: string]: string }, ...any ];
+import { NodeSnapshot } from './snapshot';
 
 export type SnapshotData = {
   doctype?: string,
@@ -36,7 +26,9 @@ export type SnapshotData = {
   }[],
   viewport: { width: number, height: number },
   url: string,
-  snapshotId?: string,
+  snapshotId: string,
+  timestamp: number,
+  collectionTime: number,
 };
 
 export const kSnapshotStreamer = '__playwright_snapshot_streamer_';
@@ -46,6 +38,9 @@ export function frameSnapshotStreamer() {
   // Communication with Playwright.
   const kSnapshotStreamer = '__playwright_snapshot_streamer_';
   const kSnapshotBinding = '__playwright_snapshot_binding_';
+
+  if ((window as any)[kSnapshotStreamer])
+    return;
 
   // Attributes present in the snapshot.
   const kShadowAttribute = '__playwright_shadow_root_';
@@ -87,6 +82,7 @@ export function frameSnapshotStreamer() {
     private _readingStyleSheet = false;  // To avoid invalidating due to our own reads.
     private _fakeBase: HTMLBaseElement;
     private _observer: MutationObserver;
+    private _interval = 0;
 
     constructor() {
       this._interceptNativeMethod(window.CSSStyleSheet.prototype, 'insertRule', (sheet: CSSStyleSheet) => this._invalidateStyleSheet(sheet));
@@ -101,8 +97,6 @@ export function frameSnapshotStreamer() {
       this._observer = new MutationObserver(list => this._handleMutations(list));
       const observerConfig = { attributes: true, subtree: true };
       this._observer.observe(document, observerConfig);
-
-      this._streamSnapshot();
     }
 
     private _interceptNativeMethod(obj: any, method: string, cb: (thisObj: any, result: any) => void) {
@@ -174,21 +168,29 @@ export function frameSnapshotStreamer() {
       (iframeElement as any)[kSnapshotFrameId] = frameId;
     }
 
-    forceSnapshot(snapshotId: string) {
-      this._streamSnapshot(snapshotId);
+    captureSnapshot(snapshotId: string) {
+      this._streamSnapshot(snapshotId, true);
     }
 
-    private _streamSnapshot(snapshotId?: string) {
+    setSnapshotInterval(interval: number) {
+      this._interval = interval;
+      if (interval)
+        this._streamSnapshot(`snapshot@${performance.now()}`, false);
+    }
+
+    private _streamSnapshot(snapshotId: string, explicitRequest: boolean) {
       if (this._timer) {
         clearTimeout(this._timer);
         this._timer = undefined;
       }
       try {
-        const snapshot = this._captureSnapshot(snapshotId);
-        (window as any)[kSnapshotBinding](snapshot).catch((e: any) => {});
+        const snapshot = this._captureSnapshot(snapshotId, explicitRequest);
+        if (snapshot)
+          (window as any)[kSnapshotBinding](snapshot);
       } catch (e) {
       }
-      this._timer = setTimeout(() => this._streamSnapshot(), 100);
+      if (this._interval)
+        this._timer = setTimeout(() => this._streamSnapshot(`snapshot@${performance.now()}`, false), this._interval);
     }
 
     private _sanitizeUrl(url: string): string {
@@ -238,7 +240,8 @@ export function frameSnapshotStreamer() {
       }
     }
 
-    private _captureSnapshot(snapshotId?: string): SnapshotData {
+    private _captureSnapshot(snapshotId: string, explicitRequest: boolean): SnapshotData | undefined {
+      const timestamp = performance.now();
       const snapshotNumber = ++this._lastSnapshotNumber;
       let nodeCounter = 0;
       let shadowDomNesting = 0;
@@ -403,10 +406,14 @@ export function frameSnapshotStreamer() {
       };
 
       let html: NodeSnapshot;
-      if (document.documentElement)
-        html = visitNode(document.documentElement)!.n;
-      else
+      let htmlEquals = false;
+      if (document.documentElement) {
+        const { equals, n } = visitNode(document.documentElement)!;
+        htmlEquals = equals;
+        html = n;
+      } else {
         html = ['html'];
+      }
 
       const result: SnapshotData = {
         html,
@@ -418,78 +425,30 @@ export function frameSnapshotStreamer() {
         },
         url: location.href,
         snapshotId,
+        timestamp,
+        collectionTime: 0,
       };
 
+      let allOverridesAreRefs = true;
       for (const sheet of this._allStyleSheetsWithUrlOverride) {
         const content = this._updateLinkStyleSheetTextIfNeeded(sheet, snapshotNumber);
         if (content === undefined) {
           // Unable to capture stylsheet contents.
           continue;
         }
+        if (typeof content !== 'number')
+          allOverridesAreRefs = false;
         const base = this._getSheetBase(sheet);
         const url = removeHash(this._resolveUrl(base, sheet.href!));
         result.resourceOverrides.push({ url, content });
       }
 
+      result.collectionTime = performance.now() - result.timestamp;
+      if (!explicitRequest && htmlEquals && allOverridesAreRefs)
+        return undefined;
       return result;
     }
   }
 
   (window as any)[kSnapshotStreamer] = new Streamer();
-}
-
-export function snapshotScript() {
-  function applyPlaywrightAttributes(shadowAttribute: string, scrollTopAttribute: string, scrollLeftAttribute: string) {
-    const scrollTops: Element[] = [];
-    const scrollLefts: Element[] = [];
-
-    const visit = (root: Document | ShadowRoot) => {
-      // Collect all scrolled elements for later use.
-      for (const e of root.querySelectorAll(`[${scrollTopAttribute}]`))
-        scrollTops.push(e);
-      for (const e of root.querySelectorAll(`[${scrollLeftAttribute}]`))
-        scrollLefts.push(e);
-
-      for (const iframe of root.querySelectorAll('iframe')) {
-        const src = iframe.getAttribute('src') || '';
-        if (src.startsWith('data:text/html'))
-          continue;
-        // Rewrite iframes to use snapshot url (relative to window.location)
-        // instead of begin relative to the <base> tag.
-        const index = location.pathname.lastIndexOf('/');
-        if (index === -1)
-          continue;
-        const pathname = location.pathname.substring(0, index + 1) + src;
-        const href = location.href.substring(0, location.href.indexOf(location.pathname)) + pathname;
-        iframe.setAttribute('src', href);
-      }
-
-      for (const element of root.querySelectorAll(`template[${shadowAttribute}]`)) {
-        const template = element as HTMLTemplateElement;
-        const shadowRoot = template.parentElement!.attachShadow({ mode: 'open' });
-        shadowRoot.appendChild(template.content);
-        template.remove();
-        visit(shadowRoot);
-      }
-    };
-    visit(document);
-
-    const onLoad = () => {
-      window.removeEventListener('load', onLoad);
-      for (const element of scrollTops) {
-        element.scrollTop = +element.getAttribute(scrollTopAttribute)!;
-        element.removeAttribute(scrollTopAttribute);
-      }
-      for (const element of scrollLefts) {
-        element.scrollLeft = +element.getAttribute(scrollLeftAttribute)!;
-        element.removeAttribute(scrollLeftAttribute);
-      }
-    };
-    window.addEventListener('load', onLoad);
-  }
-
-  const kShadowAttribute = '__playwright_shadow_root_';
-  const kScrollTopAttribute = '__playwright_scroll_top_';
-  const kScrollLeftAttribute = '__playwright_scroll_left_';
-  return `\n(${applyPlaywrightAttributes.toString()})('${kShadowAttribute}', '${kScrollTopAttribute}', '${kScrollLeftAttribute}')`;
 }
