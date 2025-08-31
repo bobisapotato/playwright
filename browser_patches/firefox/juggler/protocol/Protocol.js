@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const {t, checkScheme} = ChromeUtils.import('chrome://juggler/content/protocol/PrimitiveTypes.js');
+const {t} = ChromeUtils.importESModule('chrome://juggler/content/protocol/PrimitiveTypes.js');
 
 // Protocol-specific types.
 const browserTypes = {};
@@ -13,6 +13,11 @@ browserTypes.TargetInfo = {
   browserContextId: t.Optional(t.String),
   // PageId of parent tab, if any.
   openerId: t.Optional(t.String),
+};
+
+browserTypes.UserPreference = {
+  name: t.String,
+  value: t.Any,
 };
 
 browserTypes.CookieOptions = {
@@ -71,7 +76,7 @@ pageTypes.Size = {
 
 pageTypes.Viewport = {
   viewportSize: pageTypes.Size,
-  deviceScaleFactor: t.Number,
+  deviceScaleFactor: t.Optional(t.Number),
 };
 
 pageTypes.DOMQuad = {
@@ -97,6 +102,10 @@ pageTypes.Clip = {
   height: t.Number,
 };
 
+pageTypes.InitScript = {
+  script: t.String,
+  worldName: t.Optional(t.String),
+};
 
 const runtimeTypes = {};
 runtimeTypes.RemoteObject = {
@@ -130,6 +139,11 @@ runtimeTypes.CallFunctionArgument = {
   value: t.Any,
 };
 
+runtimeTypes.AuxData = {
+  frameId: t.Optional(t.String),
+  name: t.Optional(t.String),
+};
+
 const axTypes = {};
 axTypes.AXTree = {
   role: t.String,
@@ -140,7 +154,7 @@ axTypes.AXTree = {
   focused: t.Optional(t.Boolean),
   pressed: t.Optional(t.Boolean),
   focusable: t.Optional(t.Boolean),
-  haspopup: t.Optional(t.Boolean),
+  haspopup: t.Optional(t.String),
   required: t.Optional(t.Boolean),
   invalid: t.Optional(t.Boolean),
   modal: t.Optional(t.Boolean),
@@ -179,6 +193,7 @@ networkTypes.HTTPHeader = {
 networkTypes.HTTPCredentials = {
   username: t.String,
   password: t.String,
+  origin: t.Optional(t.String),
 };
 
 networkTypes.SecurityDetails = {
@@ -218,6 +233,7 @@ const Browser = {
       uuid: t.String,
       browserContextId: t.Optional(t.String),
       pageTargetId: t.String,
+      frameId: t.String,
       url: t.String,
       suggestedFileName: t.String,
     },
@@ -226,7 +242,7 @@ const Browser = {
       canceled: t.Optional(t.Boolean),
       error: t.Optional(t.String),
     },
-    'screencastFinished': {
+    'videoRecordingFinished': {
       screencastId: t.String,
     },
   },
@@ -235,6 +251,7 @@ const Browser = {
     'enable': {
       params: {
         attachToDefaultContext: t.Boolean,
+        userPrefs: t.Optional(t.Array(browserTypes.UserPreference)),
       },
     },
     'createBrowserContext': {
@@ -271,6 +288,7 @@ const Browser = {
         headers: t.Array(networkTypes.HTTPHeader),
       },
     },
+    'clearCache': {},
     'setBrowserProxy': {
       params: {
         type: t.Enum(['http', 'https', 'socks', 'socks4']),
@@ -304,6 +322,12 @@ const Browser = {
         enabled: t.Boolean,
       },
     },
+    'setCacheDisabled': {
+      params: {
+        browserContextId: t.Optional(t.String),
+        cacheDisabled: t.Boolean,
+      },
+    },
     'setGeolocationOverride': {
       params: {
         browserContextId: t.Optional(t.String),
@@ -314,6 +338,12 @@ const Browser = {
       params: {
         browserContextId: t.Optional(t.String),
         userAgent: t.Nullable(t.String),
+      }
+    },
+    'setPlatformOverride': {
+      params: {
+        browserContextId: t.Optional(t.String),
+        platform: t.Nullable(t.String),
       }
     },
     'setBypassCSP': {
@@ -331,7 +361,7 @@ const Browser = {
     'setJavaScriptDisabled': {
       params: {
         browserContextId: t.Optional(t.String),
-        javaScriptDisabled: t.Nullable(t.Boolean),
+        javaScriptDisabled: t.Boolean,
       }
     },
     'setLocaleOverride': {
@@ -364,15 +394,16 @@ const Browser = {
         viewport: t.Nullable(pageTypes.Viewport),
       }
     },
-    'addScriptToEvaluateOnNewDocument': {
+    'setInitScripts': {
       params: {
         browserContextId: t.Optional(t.String),
-        script: t.String,
+        scripts: t.Array(pageTypes.InitScript),
       }
     },
     'addBinding': {
       params: {
         browserContextId: t.Optional(t.String),
+        worldName: t.Optional(t.String),
         name: t.String,
         script: t.String,
       },
@@ -420,14 +451,49 @@ const Browser = {
         colorScheme: t.Nullable(t.Enum(['dark', 'light', 'no-preference'])),
       },
     },
-    'setScreencastOptions': {
+    'setReducedMotion': {
       params: {
         browserContextId: t.Optional(t.String),
-        dir: t.String,
-        width: t.Number,
-        height: t.Number,
-        scale: t.Optional(t.Number),
+        reducedMotion: t.Nullable(t.Enum(['reduce', 'no-preference'])),
       },
+    },
+    'setForcedColors': {
+      params: {
+        browserContextId: t.Optional(t.String),
+        forcedColors: t.Nullable(t.Enum(['active', 'none'])),
+      },
+    },
+    'setContrast': {
+      params: {
+        browserContextId: t.Optional(t.String),
+        contrast: t.Nullable(t.Enum(['less', 'more', 'custom', 'no-preference'])),
+      },
+    },
+    'setVideoRecordingOptions': {
+      params: {
+        browserContextId: t.Optional(t.String),
+        options: t.Optional({
+          dir: t.String,
+          width: t.Number,
+          height: t.Number,
+        }),
+      },
+    },
+    'cancelDownload': {
+      params: {
+        uuid: t.Optional(t.String),
+      }
+    }
+  },
+};
+
+const Heap = {
+  targets: ['page'],
+  types: {},
+  events: {},
+  methods: {
+    'collectGarbage': {
+      params: {},
     },
   },
 };
@@ -461,10 +527,14 @@ const Network = {
       statusText: t.String,
       headers: t.Array(networkTypes.HTTPHeader),
       timing: networkTypes.ResourceTiming,
+      fromServiceWorker: t.Boolean,
     },
     'requestFinished': {
       requestId: t.String,
       responseEndTime: t.Number,
+      transferSize: t.Number,
+      encodedBodySize: t.Number,
+      protocolVersion: t.Optional(t.String),
     },
     'requestFailed': {
       requestId: t.String,
@@ -524,10 +594,12 @@ const Runtime = {
   events: {
     'executionContextCreated': {
       executionContextId: t.String,
-      auxData: t.Any,
+      auxData: runtimeTypes.AuxData,
     },
     'executionContextDestroyed': {
       executionContextId: t.String,
+    },
+    'executionContextsCleared': {
     },
     'console': {
       executionContextId: t.String,
@@ -612,7 +684,6 @@ const Page = {
     'navigationStarted': {
       frameId: t.String,
       navigationId: t.String,
-      url: t.String,
     },
     'navigationCommitted': {
       frameId: t.String,
@@ -665,7 +736,7 @@ const Page = {
       workerId: t.String,
       message: t.String,
     },
-    'screencastStarted': {
+    'videoRecordingStarted': {
       screencastId: t.String,
       file: t.String,
     },
@@ -697,6 +768,11 @@ const Page = {
       opcode: t.Number,
       data: t.String,
     },
+    'screencastFrame': {
+      data: t.String,
+      deviceWidth: t.Number,
+      deviceHeight: t.Number,
+    },
   },
 
   methods: {
@@ -714,6 +790,7 @@ const Page = {
     },
     'addBinding': {
       params: {
+        worldName: t.Optional(t.String),
         name: t.String,
         script: t.String,
       },
@@ -721,6 +798,11 @@ const Page = {
     'setViewportSize': {
       params: {
         viewportSize: t.Nullable(pageTypes.Size),
+      },
+    },
+    'setZoom': {
+      params: {
+        zoom: t.Number,
       },
     },
     'bringToFront': {
@@ -731,6 +813,9 @@ const Page = {
       params: {
         type: t.Optional(t.Enum(['screen', 'print', ''])),
         colorScheme: t.Optional(t.Enum(['dark', 'light', 'no-preference'])),
+        reducedMotion: t.Optional(t.Enum(['reduce', 'no-preference'])),
+        forcedColors: t.Optional(t.Enum(['active', 'none'])),
+        contrast: t.Optional(t.Enum(['less', 'more', 'custom', 'no-preference'])),
       },
     },
     'setCacheDisabled': {
@@ -755,19 +840,10 @@ const Page = {
         rect: t.Optional(pageTypes.Rect),
       },
     },
-    'addScriptToEvaluateOnNewDocument': {
+    'setInitScripts': {
       params: {
-        script: t.String,
-        worldName: t.Optional(t.String),
-      },
-      returns: {
-        scriptId: t.String,
+        scripts: t.Array(pageTypes.InitScript)
       }
-    },
-    'removeScriptToEvaluateOnNewDocument': {
-      params: {
-        scriptId: t.String,
-      },
     },
     'navigate': {
       params: {
@@ -777,7 +853,6 @@ const Page = {
       },
       returns: {
         navigationId: t.Nullable(t.String),
-        navigationURL: t.Nullable(t.String),
       }
     },
     'goBack': {
@@ -797,23 +872,13 @@ const Page = {
       },
     },
     'reload': {
-      params: {
-        frameId: t.String,
-      },
-    },
-    'getBoundingBox': {
-      params: {
-        frameId: t.String,
-        objectId: t.String,
-      },
-      returns: {
-        boundingBox: t.Nullable(pageTypes.Rect),
-      },
+      params: { },
     },
     'adoptNode': {
       params: {
         frameId: t.String,
-        objectId: t.String,
+        // Missing objectId adopts frame owner.
+        objectId: t.Optional(t.String),
         executionContextId: t.String,
       },
       returns: {
@@ -823,8 +888,9 @@ const Page = {
     'screenshot': {
       params: {
         mimeType: t.Enum(['image/png', 'image/jpeg']),
-        fullPage: t.Optional(t.Boolean),
-        clip: t.Optional(pageTypes.Clip),
+        clip: pageTypes.Clip,
+        quality: t.Optional(t.Number),
+        omitDeviceScaleFactor: t.Optional(t.Boolean),
       },
       returns: {
         data: t.String,
@@ -869,13 +935,23 @@ const Page = {
     },
     'dispatchMouseEvent': {
       params: {
-        type: t.String,
+        type: t.Enum(['mousedown', 'mousemove', 'mouseup']),
         button: t.Number,
         x: t.Number,
         y: t.Number,
         modifiers: t.Number,
         clickCount: t.Optional(t.Number),
         buttons: t.Number,
+      }
+    },
+    'dispatchWheelEvent': {
+      params: {
+        x: t.Number,
+        y: t.Number,
+        deltaX: t.Number,
+        deltaY: t.Number,
+        deltaZ: t.Number,
+        modifiers: t.Number,
       }
     },
     'insertText': {
@@ -905,15 +981,22 @@ const Page = {
         message: t.String,
       },
     },
-    'startVideoRecording': {
+    'startScreencast': {
       params: {
-        file: t.String,
         width: t.Number,
         height: t.Number,
-        scale: t.Optional(t.Number),
+        quality: t.Number,
+      },
+      returns: {
+        screencastId: t.String,
       },
     },
-    'stopVideoRecording': {
+    'screencastFrameAck': {
+      params: {
+        screencastId: t.String,
+      },
+    },
+    'stopScreencast': {
     },
   },
 };
@@ -935,8 +1018,6 @@ const Accessibility = {
   }
 }
 
-this.protocol = {
-  domains: {Browser, Page, Runtime, Network, Accessibility},
+export const protocol = {
+  domains: {Browser, Heap, Page, Runtime, Network, Accessibility},
 };
-this.checkScheme = checkScheme;
-this.EXPORTED_SYMBOLS = ['protocol', 'checkScheme'];

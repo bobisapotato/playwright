@@ -25,10 +25,17 @@
 
 @class WKWebView;
 
+@interface CustomWindow : NSWindow
+
+- (NSRect)constrainFrameRect:(NSRect)frameRect toScreen:(NSScreen *)screen;
+
+@end
+
 @interface BrowserWindowController : NSWindowController
 
 - (IBAction)goBack:(id)sender;
 - (IBAction)goForward:(id)sender;
+- (IBAction)toggleFullWindowWebView:(id)sender;
 - (IBAction)reload:(id)sender;
 - (IBAction)saveAsPDF:(id)sender;
 - (IBAction)saveAsWebArchive:(id)sender;

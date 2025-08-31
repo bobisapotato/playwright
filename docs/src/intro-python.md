@@ -1,92 +1,112 @@
 ---
 id: intro
-title: "Getting Started"
+title: "Installation"
 ---
+## Introduction
 
-<!-- TOC -->
-- [Release notes](./release-notes.md)
+Playwright was created specifically to accommodate the needs of end-to-end testing. Playwright supports all modern rendering engines including Chromium, WebKit, and Firefox. Test on Windows, Linux, and macOS, locally or on CI, headless or headed with native mobile emulation.
 
-## Installation
+The [Playwright library](./library.md) can be used as a general purpose browser automation tool, providing a powerful set of APIs to automate web applications, for both sync and async Python.
 
-Use pip to install Playwright in your Python project. See [system requirements](#system-requirements).
+This introduction describes the Playwright Pytest plugin, which is the recommended way to write end-to-end tests.
 
-```sh
-$ pip install playwright
-$ playwright install
+**You will learn**
+
+- [How to install Playwright Pytest](/intro.md#installing-playwright-pytest)
+- [How to run the example test](/intro.md#running-the-example-test)
+
+## Installing Playwright Pytest
+
+Playwright recommends using the official [Playwright Pytest plugin](./test-runners.md) to write end-to-end tests. It provides context isolation, running it on multiple browser configurations out of the box.
+
+Get started by installing Playwright and running the example test to see it in action.
+
+<Tabs
+  groupId="package-managers"
+  defaultValue="pypi"
+  values={[
+    {label: 'PyPI', value: 'pypi'},
+    {label: 'Anaconda', value: 'anaconda'}
+  ]
+}>
+<TabItem value="pypi">
+
+Install the [Pytest plugin](https://pypi.org/project/pytest-playwright/):
+
+```bash
+pip install pytest-playwright
 ```
 
-These commands download the Playwright package and install browser binaries for Chromium, Firefox and WebKit. To modify this behavior see [installation parameters](./installation.md).
+</TabItem>
+<TabItem value="anaconda">
 
-## Usage
+Install the [Pytest plugin](https://anaconda.org/Microsoft/pytest-playwright):
 
-Once installed, you can `import` Playwright in a Python script, and launch any of the 3 browsers (`chromium`, `firefox` and `webkit`).
-
-```py
-from playwright.sync_api import sync_playwright
-
-with sync_playwright() as p:
-    browser = p.chromium.launch()
-    page = browser.new_page()
-    page.goto("http://playwright.dev")
-    print(page.title())
-    browser.close()
+```bash
+conda config --add channels conda-forge
+conda config --add channels microsoft
+conda install pytest-playwright
 ```
 
-Playwright supports two variations of the API: synchronous and asynchronous. If your modern project uses [asyncio](https://docs.python.org/3/library/asyncio.html), you should use async API:
+</TabItem>
+</Tabs>
 
-```py
-import asyncio
-from playwright.async_api import async_playwright
+Install the required browsers:
 
-async def main():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch()
-        page = await browser.new_page()
-        await page.goto("http://playwright.dev")
-        print(await page.title())
-        await browser.close()
-
-asyncio.run(main())
+```bash
+playwright install
 ```
 
-## First script
+## Add Example Test
 
-In our first script, we will navigate to `whatsmyuseragent.org` and take a screenshot in WebKit.
+Create a file that follows the `test_` prefix convention, such as `test_example.py`, inside the current working directory or in a sub-directory with the code below. Make sure your test name also follows the `test_` prefix convention.
 
-```py
-from playwright.sync_api import sync_playwright
+```py title="test_example.py"
+import re
+from playwright.sync_api import Page, expect
 
-with sync_playwright() as p:
-    browser = p.webkit.launch()
-    page = await browser.new_page()
-    page.goto("http://whatsmyuseragent.org/")
-    page.screenshot(path="example.png")
-    browser.close()
+def test_has_title(page: Page):
+    page.goto("https://playwright.dev/")
+
+    # Expect a title "to contain" a substring.
+    expect(page).to_have_title(re.compile("Playwright"))
+
+def test_get_started_link(page: Page):
+    page.goto("https://playwright.dev/")
+
+    # Click the get started link.
+    page.get_by_role("link", name="Get started").click()
+
+    # Expects page to have a heading with the name of Installation.
+    expect(page.get_by_role("heading", name="Installation")).to_be_visible()
 ```
 
-By default, Playwright runs the browsers in headless mode. To see the browser UI, pass the `headless=False` flag while launching the browser. You can also use [`option: slowMo`] to slow down execution. Learn more in the debugging tools [section](./debug.md).
+## Running the Example Test
 
-```py
-firefox.launch(headless=False, slow_mo=50)
+By default tests will be run on chromium. This can be configured via the [CLI options](./running-tests.md). Tests are run in headless mode meaning no browser UI will open up when running the tests. Results of the tests and test logs will be shown in the terminal.
+
+```bash
+pytest
 ```
 
-## Record scripts
+## Updating Playwright
 
-Command Line Interface [CLI](./cli.md) can be used to record user interactions and generate Python code.
+To update Playwright to the latest version run the following command:
 
-```sh
-$ playwright codegen wikipedia.org
+```bash
+pip install pytest-playwright playwright -U
 ```
 
 ## System requirements
 
-Playwright requires Python version 3.7 or above. The browser binaries for Chromium,
-Firefox and WebKit work across the 3 platforms (Windows, macOS, Linux):
+- Python 3.8 or higher.
+- Windows 11+, Windows Server 2019+ or Windows Subsystem for Linux (WSL).
+- macOS 14 Ventura, or later.
+- Debian 12, Debian 13, Ubuntu 22.04, Ubuntu 24.04, on x86-64 and arm64 architecture.
 
-* **Windows**: Works with Windows and Windows Subsystem for Linux (WSL).
-* **macOS**: Requires 10.14 or above.
-* **Linux**: Depending on your Linux distribution, you might need to install additional
-  dependencies to run the browsers.
-  * Firefox requires Ubuntu 18.04+
-  * For Ubuntu 18.04, the additional dependencies are defined in [our Docker image](https://github.com/microsoft/playwright/blob/master/utils/docker/Dockerfile.bionic),
-    which is based on Ubuntu.
+## What's next
+
+- [Write tests using web first assertions, page fixtures and locators](./writing-tests.md)
+- [Run single test, multiple tests, headed mode](./running-tests.md)
+- [Generate tests with Codegen](./codegen.md)
+- [See a trace of your tests](./trace-viewer-intro.md)

@@ -13,17 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { Protocol } from './protocol';
 import { ChildProcess } from 'child_process';
-import { EventEmitter } from 'events';
 import { Readable } from 'stream';
+import { ReadStream } from 'fs';
+import { Protocol } from './protocol';
 import { Serializable, EvaluationArgument, PageFunction, PageFunctionOn, SmartHandle, ElementHandleForTag, BindingSource } from './structs';
 
 type PageWaitForSelectorOptionsNotHidden = PageWaitForSelectorOptions & {
-  state: 'visible'|'attached';
+  state?: 'visible'|'attached';
 };
 type ElementHandleWaitForSelectorOptionsNotHidden = ElementHandleWaitForSelectorOptions & {
-  state: 'visible'|'attached';
+  state?: 'visible'|'attached';
 };
 
 export interface Page {
@@ -33,8 +33,10 @@ export interface Page {
   evaluateHandle<R, Arg>(pageFunction: PageFunction<Arg, R>, arg: Arg): Promise<SmartHandle<R>>;
   evaluateHandle<R>(pageFunction: PageFunction<void, R>, arg?: any): Promise<SmartHandle<R>>;
 
-  $<K extends keyof HTMLElementTagNameMap>(selector: K): Promise<ElementHandleForTag<K> | null>;
-  $(selector: string): Promise<ElementHandle<SVGElement | HTMLElement> | null>;
+  addInitScript<Arg>(script: PageFunction<Arg, any> | { path?: string, content?: string }, arg?: Arg): Promise<void>;
+
+  $<K extends keyof HTMLElementTagNameMap>(selector: K, options?: { strict: boolean }): Promise<ElementHandleForTag<K> | null>;
+  $(selector: string, options?: { strict: boolean }): Promise<ElementHandle<SVGElement | HTMLElement> | null>;
 
   $$<K extends keyof HTMLElementTagNameMap>(selector: K): Promise<ElementHandleForTag<K>[]>;
   $$(selector: string): Promise<ElementHandle<SVGElement | HTMLElement>[]>;
@@ -59,6 +61,17 @@ export interface Page {
 
   exposeBinding(name: string, playwrightBinding: (source: BindingSource, arg: JSHandle) => any, options: { handle: true }): Promise<void>;
   exposeBinding(name: string, playwrightBinding: (source: BindingSource, ...args: any[]) => any, options?: { handle?: boolean }): Promise<void>;
+
+  removeAllListeners(type?: string): this;
+  removeAllListeners(type: string | undefined, options: {
+    /**
+     * Specifies whether to wait for already running listeners and what to do if they throw errors:
+     * - `'default'` - do not wait for current listener calls (if any) to finish, if the listener throws, it may result in unhandled error
+     * - `'wait'` - wait for current listener calls (if any) to finish
+     * - `'ignoreErrors'` - do not wait for current listener calls (if any) to finish, all errors thrown by the listeners after removal are silently caught
+     */
+    behavior?: 'wait'|'ignoreErrors'|'default'
+  }): Promise<void>;
 }
 
 export interface Frame {
@@ -68,8 +81,8 @@ export interface Frame {
   evaluateHandle<R, Arg>(pageFunction: PageFunction<Arg, R>, arg: Arg): Promise<SmartHandle<R>>;
   evaluateHandle<R>(pageFunction: PageFunction<void, R>, arg?: any): Promise<SmartHandle<R>>;
 
-  $<K extends keyof HTMLElementTagNameMap>(selector: K): Promise<ElementHandleForTag<K> | null>;
-  $(selector: string): Promise<ElementHandle<SVGElement | HTMLElement> | null>;
+  $<K extends keyof HTMLElementTagNameMap>(selector: K, options?: { strict: boolean }): Promise<ElementHandleForTag<K> | null>;
+  $(selector: string, options?: { strict: boolean }): Promise<ElementHandle<SVGElement | HTMLElement> | null>;
 
   $$<K extends keyof HTMLElementTagNameMap>(selector: K): Promise<ElementHandleForTag<K>[]>;
   $$(selector: string): Promise<ElementHandle<SVGElement | HTMLElement>[]>;
@@ -96,6 +109,32 @@ export interface Frame {
 export interface BrowserContext {
   exposeBinding(name: string, playwrightBinding: (source: BindingSource, arg: JSHandle) => any, options: { handle: true }): Promise<void>;
   exposeBinding(name: string, playwrightBinding: (source: BindingSource, ...args: any[]) => any, options?: { handle?: boolean }): Promise<void>;
+
+  addInitScript<Arg>(script: PageFunction<Arg, any> | { path?: string, content?: string }, arg?: Arg): Promise<void>;
+
+  removeAllListeners(type?: string): this;
+  removeAllListeners(type: string | undefined, options: {
+    /**
+     * Specifies whether to wait for already running listeners and what to do if they throw errors:
+     * - `'default'` - do not wait for current listener calls (if any) to finish, if the listener throws, it may result in unhandled error
+     * - `'wait'` - wait for current listener calls (if any) to finish
+     * - `'ignoreErrors'` - do not wait for current listener calls (if any) to finish, all errors thrown by the listeners after removal are silently caught
+     */
+    behavior?: 'wait'|'ignoreErrors'|'default'
+  }): Promise<void>;
+}
+
+export interface Browser {
+  removeAllListeners(type?: string): this;
+  removeAllListeners(type: string | undefined, options: {
+    /**
+     * Specifies whether to wait for already running listeners and what to do if they throw errors:
+     * - `'default'` - do not wait for current listener calls (if any) to finish, if the listener throws, it may result in unhandled error
+     * - `'wait'` - wait for current listener calls (if any) to finish
+     * - `'ignoreErrors'` - do not wait for current listener calls (if any) to finish, all errors thrown by the listeners after removal are silently caught
+     */
+    behavior?: 'wait'|'ignoreErrors'|'default'
+  }): Promise<void>;
 }
 
 export interface Worker {
@@ -118,8 +157,8 @@ export interface JSHandle<T = any> {
 }
 
 export interface ElementHandle<T=Node> extends JSHandle<T> {
-  $<K extends keyof HTMLElementTagNameMap>(selector: K): Promise<ElementHandleForTag<K> | null>;
-  $(selector: string): Promise<ElementHandle<SVGElement | HTMLElement> | null>;
+  $<K extends keyof HTMLElementTagNameMap>(selector: K, options?: { strict: boolean }): Promise<ElementHandleForTag<K> | null>;
+  $(selector: string, options?: { strict: boolean }): Promise<ElementHandle<SVGElement | HTMLElement> | null>;
 
   $$<K extends keyof HTMLElementTagNameMap>(selector: K): Promise<ElementHandleForTag<K>[]>;
   $$(selector: string): Promise<ElementHandle<SVGElement | HTMLElement>[]>;
@@ -140,13 +179,37 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
   waitForSelector(selector: string, options: ElementHandleWaitForSelectorOptions): Promise<null|ElementHandle<SVGElement | HTMLElement>>;
 }
 
-export interface BrowserType<Browser> {
-
+export interface Locator {
+  evaluate<R, Arg, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(pageFunction: PageFunctionOn<E, Arg, R>, arg: Arg, options?: {
+    timeout?: number;
+  }): Promise<R>;
+  evaluate<R, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(pageFunction: PageFunctionOn<E, void, R>, options?: {
+    timeout?: number;
+  }): Promise<R>;
+  evaluateHandle<R, Arg, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(pageFunction: PageFunctionOn<E, Arg, R>, arg: Arg): Promise<SmartHandle<R>>;
+  evaluateHandle<R, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(pageFunction: PageFunctionOn<E, void, R>): Promise<SmartHandle<R>>;
+  evaluateAll<R, Arg, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(pageFunction: PageFunctionOn<E[], Arg, R>, arg: Arg): Promise<R>;
+  evaluateAll<R, E extends SVGElement | HTMLElement = SVGElement | HTMLElement>(pageFunction: PageFunctionOn<E[], void, R>): Promise<R>;
+  elementHandle(options?: {
+    timeout?: number;
+  }): Promise<null|ElementHandle<SVGElement | HTMLElement>>;
 }
 
-export interface ChromiumBrowser extends Browser {
-  contexts(): Array<ChromiumBrowserContext>;
-  newContext(options?: BrowserContextOptions): Promise<ChromiumBrowserContext>;
+export interface BrowserType<Unused = {}> {
+  connectOverCDP(endpointURL: string, options?: ConnectOverCDPOptions): Promise<Browser>;
+  /**
+   * Option `wsEndpoint` is deprecated. Instead use `endpointURL`.
+   * @deprecated
+   */
+  connectOverCDP(options: ConnectOverCDPOptions & { wsEndpoint?: string }): Promise<Browser>;
+  connect(wsEndpoint: string, options?: ConnectOptions): Promise<Browser>;
+  /**
+   * wsEndpoint in options is deprecated. Instead use `wsEndpoint`.
+   * @param wsEndpoint A browser websocket endpoint to connect to.
+   * @param options
+   * @deprecated
+   */
+  connect(options: ConnectOptions & { wsEndpoint?: string }): Promise<Browser>;
 }
 
 export interface CDPSession {
@@ -159,6 +222,11 @@ export interface CDPSession {
     method: T,
     params?: Protocol.CommandParameters[T]
   ): Promise<Protocol.CommandReturnValues[T]>;
+}
+
+export interface WebSocketRoute {
+  onMessage(handler: (message: string | Buffer) => any): void;
+  onClose(handler: (code: number | undefined, reason: string | undefined) => any): void;
 }
 
 type DeviceDescriptor = {
@@ -177,17 +245,7 @@ class TimeoutError extends Error {}
 }
 
 export interface Accessibility {
-  snapshot(options?: {
-    /**
-     * Prune uninteresting nodes from the tree. Defaults to `true`.
-     */
-    interestingOnly?: boolean;
-
-    /**
-     * The root DOM element for the snapshot. Defaults to the whole page.
-     */
-    root?: ElementHandle;
-  }): Promise<null|AccessibilityNode>;
+  snapshot(options?: AccessibilitySnapshotOptions): Promise<null|AccessibilityNode>;
 }
 
 type AccessibilityNode = {
@@ -219,8 +277,7 @@ type AccessibilityNode = {
   children?: AccessibilityNode[];
 }
 
-export const selectors: Selectors;
-export const devices: Devices & DeviceDescriptor[];
+export const devices: Devices;
 
 //@ts-ignore this will be any if electron is not installed
 type ElectronType = typeof import('electron');
@@ -281,6 +338,7 @@ export type AndroidKey =
   'Star' | 'Pound' | '*' | '#' |
   'DialUp' | 'DialDown' | 'DialLeft' | 'DialRight' | 'DialCenter' |
   'VolumeUp' | 'VolumeDown' |
+  'ChannelUp' | 'ChannelDown' |
   'Power' |
   'Camera' |
   'Clear' |
@@ -320,6 +378,11 @@ export type AndroidKey =
   'Cut' |
   'Copy' |
   'Paste';
+
+export const _electron: Electron;
+export const _android: Android;
+export const _bidiChromium: BrowserType;
+export const _bidiFirefox: BrowserType;
 
 // This is required to not export everything by default. See https://github.com/Microsoft/TypeScript/issues/19545#issuecomment-340490459
 export {};

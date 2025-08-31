@@ -33,17 +33,40 @@ module.exports = {processDashboardCompressedV1, compressReports};
 function compressReports(reports) {
   const files = {};
   for (const report of reports) {
+    const projectNameToMetadata = new Map();
+    if (report.config && report.config.projects) {
+      for (const project of report.config.projects) {
+        project.metadata = project.metadata || {};
+        if (project.metadata.headless === 'headless')
+          delete project.metadata.headless;
+        if (project.metadata.mode === 'default')
+          delete project.metadata.mode;
+        if (project.metadata.clock === 'default')
+          delete project.metadata.clock;
+        if (project.metadata.platform && project.metadata.platform.toLowerCase() !== 'android')
+          delete project.metadata.platform;
+        // Cleanup a bunch of data from report that
+        // comes from CI plugin.
+        for (const key of Object.keys(project.metadata)) {
+          if (key.startsWith('ci.') || key.startsWith('revision.'))
+            delete project.metadata[key];
+        }
+        delete project.metadata['timestamp'];
+
+        projectNameToMetadata.set(project.name, project.metadata);
+      }
+    }
     for (const spec of flattenSpecs(report)) {
       let specs = files[spec.file];
       if (!specs) {
         specs = new Map();
         files[spec.file] = specs;
       }
-      const specId = spec.file + '---' + spec.title + ' --- ' + spec.line;
+      const specId = spec.file + '---' + spec.titlePath.join('-') + ' --- ' + spec.line;
       let specObject = specs.get(specId);
       if (!specObject) {
         specObject = {
-          title: spec.title,
+          title: spec.titlePath.join(' › '),
           line: spec.line,
           column: spec.column,
           tests: new Map(),
@@ -51,21 +74,37 @@ function compressReports(reports) {
         specs.set(specId, specObject);
       }
       for (const test of spec.tests || []) {
-        if (test.runs.length === 1 && !test.runs[0].status)
+        // It's unclear how many results we get in the new test runner - let's
+        // stay on the safe side and skip test without any results.
+        if (!test.results || !test.results.length)
           continue;
-        // Overwrite test platform parameter with a more specific information from
-        // build run.
-        const osName = report.metadata.osName.toUpperCase().startsWith('MINGW') ? 'Windows' : report.metadata.osName;
-        const arch = report.metadata.arch && !report.metadata.arch.includes('x86') ? report.metadata.arch : '';
-        const platform = (osName + ' ' + report.metadata.osVersion + ' ' + arch).trim();
-        const browserName = test.parameters.browserName || 'N/A';
+        // We get tests with a single result without status for sharded
+        // tests that are inside shard that we don't run.
+        if (test.results.length === 1 && !test.results[0].status)
+          continue;
+        // Folio currently reports `data` as part of test results.
+        // In our case, all data will be identical - so pick
+        // from the first result.
+        let testParameters = test.results[0].data;
+        if (!testParameters && test.projectName)
+          testParameters = projectNameToMetadata.get(test.projectName);
+        // Prefer test platform when it exists, and fallback to
+        // the host platform when it doesn't. This way we can attribute
+        // android tests to android.
+        let platform = testParameters.platform;
+        if (!platform) {
+          const osName = report.metadata.osName.toUpperCase().startsWith('MINGW') ? 'Windows' : report.metadata.osName;
+          const arch = report.metadata.arch && !report.metadata.arch.includes('x86') ? report.metadata.arch : '';
+          platform = (osName + ' ' + report.metadata.osVersion + ' ' + arch).trim();
+        }
+        const browserName = testParameters.browserName || 'N/A';
 
-        const testName = getTestName(browserName, platform, test.parameters);
+        const testName = getTestName(browserName, platform, testParameters);
         let testObject = specObject.tests.get(testName);
         if (!testObject) {
           testObject = {
             parameters: {
-              ...test.parameters,
+              ...testParameters,
               browserName,
               platform,
             },
@@ -78,12 +117,7 @@ function compressReports(reports) {
           specObject.tests.set(testName, testObject);
         }
 
-        for (const run of test.runs) {
-          // Record duration of slow tests only, i.e. > 1s.
-          if (run.status === 'passed' && run.duration > 1000) {
-            testObject.minTime = Math.min((testObject.minTime || Number.MAX_VALUE), run.duration);
-            testObject.maxTime = Math.max((testObject.maxTime || 0), run.duration);
-          }
+        for (const run of test.results) {
           if (run.status === 'failed') {
             if (!Array.isArray(testObject.failed))
               testObject.failed = [];

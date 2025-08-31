@@ -4,10 +4,11 @@
 
 "use strict";
 
-const {Helper} = ChromeUtils.import('chrome://juggler/content/Helper.js');
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {NetworkObserver, PageNetwork} = ChromeUtils.import('chrome://juggler/content/NetworkObserver.js');
-const {PageTarget} = ChromeUtils.import('chrome://juggler/content/TargetRegistry.js');
+const {Helper, EventWatcher} = ChromeUtils.importESModule('chrome://juggler/content/Helper.js');
+const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');
+const {NetworkObserver, PageNetwork} = ChromeUtils.importESModule('chrome://juggler/content/NetworkObserver.js');
+const {PageTarget} = ChromeUtils.importESModule('chrome://juggler/content/TargetRegistry.js');
+const {setTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -15,10 +16,15 @@ const Cu = Components.utils;
 const XUL_NS = 'http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul';
 const helper = new Helper();
 
+function hashConsoleMessage(params) {
+  return params.location.lineNumber + ':' + params.location.columnNumber + ':' + params.location.url;
+}
+
 class WorkerHandler {
   constructor(session, contentChannel, workerId) {
     this._session = session;
     this._contentWorker = contentChannel.connect(workerId);
+    this._workerConsoleMessages = new Set();
     this._workerId = workerId;
 
     const emitWrappedProtocolEvent = eventName => {
@@ -32,7 +38,10 @@ class WorkerHandler {
 
     this._eventListeners = [
       contentChannel.register(workerId, {
-        runtimeConsole: emitWrappedProtocolEvent('Runtime.console'),
+        runtimeConsole: (params) => {
+          this._workerConsoleMessages.add(hashConsoleMessage(params));
+          emitWrappedProtocolEvent('Runtime.console')(params);
+        },
         runtimeExecutionContextCreated: emitWrappedProtocolEvent('Runtime.executionContextCreated'),
         runtimeExecutionContextDestroyed: emitWrappedProtocolEvent('Runtime.executionContextDestroyed'),
       }),
@@ -56,7 +65,7 @@ class WorkerHandler {
   }
 }
 
-class PageHandler {
+export class PageHandler {
   constructor(target, session, contentChannel) {
     this._session = session;
     this._contentChannel = contentChannel;
@@ -64,11 +73,14 @@ class PageHandler {
     this._workers = new Map();
 
     this._pageTarget = target;
-    this._pageNetwork = NetworkObserver.instance().pageNetworkForTarget(target);
+    this._pageNetwork = PageNetwork.forPageTarget(target);
 
     const emitProtocolEvent = eventName => {
       return (...args) => this._session.emitEvent(eventName, ...args);
     }
+
+    this._isDragging = false;
+    this._lastMousePosition = { x: 0, y: 0 };
 
     this._reportedFrameIds = new Set();
     this._networkEventsForUnreportedFrameIds = new Map();
@@ -80,16 +92,21 @@ class PageHandler {
     // to be ignored by the protocol clients.
     this._isPageReady = false;
 
-    if (this._pageTarget.screencastInfo())
-      this._onScreencastStarted();
+    if (this._pageTarget.videoRecordingInfo())
+      this._onVideoRecordingStarted();
 
+    this._pageEventSink = {};
+    helper.decorateAsEventEmitter(this._pageEventSink);
+
+    this._pendingEventWatchers = new Set();
     this._eventListeners = [
       helper.on(this._pageTarget, PageTarget.Events.DialogOpened, this._onDialogOpened.bind(this)),
       helper.on(this._pageTarget, PageTarget.Events.DialogClosed, this._onDialogClosed.bind(this)),
       helper.on(this._pageTarget, PageTarget.Events.Crashed, () => {
         this._session.emitEvent('Page.crashed', {});
       }),
-      helper.on(this._pageTarget, PageTarget.Events.ScreencastStarted, this._onScreencastStarted.bind(this)),
+      helper.on(this._pageTarget, PageTarget.Events.ScreencastStarted, this._onVideoRecordingStarted.bind(this)),
+      helper.on(this._pageTarget, PageTarget.Events.ScreencastFrame, this._onScreencastFrame.bind(this)),
       helper.on(this._pageNetwork, PageNetwork.Events.Request, this._handleNetworkEvent.bind(this, 'Network.requestWillBeSent')),
       helper.on(this._pageNetwork, PageNetwork.Events.Response, this._handleNetworkEvent.bind(this, 'Network.responseReceived')),
       helper.on(this._pageNetwork, PageNetwork.Events.RequestFinished, this._handleNetworkEvent.bind(this, 'Network.requestFinished')),
@@ -107,13 +124,24 @@ class PageHandler {
         pageNavigationCommitted: emitProtocolEvent('Page.navigationCommitted'),
         pageNavigationStarted: emitProtocolEvent('Page.navigationStarted'),
         pageReady: this._onPageReady.bind(this),
+        pageInputEvent: (event) => this._pageEventSink.emit(event.type, event),
         pageSameDocumentNavigation: emitProtocolEvent('Page.sameDocumentNavigation'),
         pageUncaughtError: emitProtocolEvent('Page.uncaughtError'),
         pageWorkerCreated: this._onWorkerCreated.bind(this),
         pageWorkerDestroyed: this._onWorkerDestroyed.bind(this),
-        runtimeConsole: emitProtocolEvent('Runtime.console'),
+        runtimeConsole: params => {
+          const consoleMessageHash = hashConsoleMessage(params);
+          for (const worker of this._workers.values()) {
+            if (worker._workerConsoleMessages.has(consoleMessageHash)) {
+              worker._workerConsoleMessages.delete(consoleMessageHash);
+              return;
+            }
+          }
+          this._session.emitEvent('Runtime.console', params);
+        },
         runtimeExecutionContextCreated: emitProtocolEvent('Runtime.executionContextCreated'),
         runtimeExecutionContextDestroyed: emitProtocolEvent('Runtime.executionContextDestroyed'),
+        runtimeExecutionContextsCleared: emitProtocolEvent('Runtime.executionContextsCleared'),
 
         webSocketCreated: emitProtocolEvent('Page.webSocketCreated'),
         webSocketOpened: emitProtocolEvent('Page.webSocketOpened'),
@@ -126,12 +154,18 @@ class PageHandler {
 
   async dispose() {
     this._contentPage.dispose();
+    for (const watcher of this._pendingEventWatchers)
+      watcher.dispose();
     helper.removeListeners(this._eventListeners);
   }
 
-  _onScreencastStarted() {
-    const info = this._pageTarget.screencastInfo();
-    this._session.emitEvent('Page.screencastStarted', { screencastId: info.videoSessionId, file: info.file });
+  _onVideoRecordingStarted() {
+    const info = this._pageTarget.videoRecordingInfo();
+    this._session.emitEvent('Page.videoRecordingStarted', { screencastId: info.sessionId, file: info.file });
+  }
+
+  _onScreencastFrame(params) {
+    this._session.emitEvent('Page.screencastFrame', params);
   }
 
   _onPageReady(event) {
@@ -206,6 +240,10 @@ class PageHandler {
     await this._pageTarget.setViewportSize(viewportSize === null ? undefined : viewportSize);
   }
 
+  async ['Page.setZoom']({zoom}) {
+    await this._pageTarget.setZoom(zoom);
+  }
+
   async ['Runtime.evaluate'](options) {
     return await this._contentPage.send('evaluate', options);
   }
@@ -220,6 +258,13 @@ class PageHandler {
 
   async ['Runtime.disposeObject'](options) {
     return await this._contentPage.send('disposeObject', options);
+  }
+
+  async ['Heap.collectGarbage']() {
+    Services.obs.notifyObservers(null, "child-gc-request");
+    Cu.forceGC();
+    Services.obs.notifyObservers(null, "child-cc-request");
+    Cu.forceCC();
   }
 
   async ['Network.getResponseBody']({requestId}) {
@@ -257,53 +302,157 @@ class PageHandler {
     return await this._contentPage.send('setFileInputFiles', options);
   }
 
-  async ['Page.setEmulatedMedia']({colorScheme, type}) {
+  async ['Page.setEmulatedMedia']({colorScheme, type, reducedMotion, forcedColors, contrast}) {
     this._pageTarget.setColorScheme(colorScheme || null);
+    this._pageTarget.setReducedMotion(reducedMotion || null);
+    this._pageTarget.setForcedColors(forcedColors || null);
+    this._pageTarget.setContrast(contrast || null);
     this._pageTarget.setEmulatedMedia(type);
   }
 
   async ['Page.bringToFront'](options) {
-    this._pageTarget._window.focus();
+    await this._pageTarget.activateAndRun(() => {});
   }
 
-  async ['Page.setCacheDisabled'](options) {
-    return await this._contentPage.send('setCacheDisabled', options);
+  async ['Page.setCacheDisabled']({cacheDisabled}) {
+    return await this._pageTarget.setCacheDisabled(cacheDisabled);
   }
 
-  async ['Page.addBinding'](options) {
-    return await this._contentPage.send('addBinding', options);
+  async ['Page.addBinding']({ worldName, name, script }) {
+    return await this._pageTarget.addBinding(worldName, name, script);
   }
 
   async ['Page.adoptNode'](options) {
     return await this._contentPage.send('adoptNode', options);
   }
 
-  async ['Page.screenshot'](options) {
-    return await this._contentPage.send('screenshot', options);
-  }
+  async ['Page.screenshot']({ mimeType, clip, omitDeviceScaleFactor, quality = 80}) {
+    const rect = new DOMRect(clip.x, clip.y, clip.width, clip.height);
 
-  async ['Page.getBoundingBox'](options) {
-    return await this._contentPage.send('getBoundingBox', options);
+    const browsingContext = this._pageTarget.linkedBrowser().browsingContext;
+    // `win.devicePixelRatio` returns a non-overriden value to priveleged code.
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=1761032
+    // See https://phabricator.services.mozilla.com/D141323
+    const devicePixelRatio = browsingContext.overrideDPPX || this._pageTarget._window.devicePixelRatio;
+    const scale = omitDeviceScaleFactor ? 1 : devicePixelRatio;
+    const canvasWidth = rect.width * scale;
+    const canvasHeight = rect.height * scale;
+
+    const MAX_CANVAS_DIMENSIONS = 32767;
+    const MAX_CANVAS_AREA = 472907776;
+    if (canvasWidth > MAX_CANVAS_DIMENSIONS || canvasHeight > MAX_CANVAS_DIMENSIONS)
+      throw new Error('Cannot take screenshot larger than ' + MAX_CANVAS_DIMENSIONS);
+    if (canvasWidth * canvasHeight > MAX_CANVAS_AREA)
+      throw new Error('Cannot take screenshot with more than ' + MAX_CANVAS_AREA + ' pixels');
+
+    let snapshot;
+    while (!snapshot) {
+      try {
+        //TODO(fission): browsingContext will change in case of cross-group navigation.
+        snapshot = await browsingContext.currentWindowGlobal.drawSnapshot(
+          rect,
+          scale,
+          "rgb(255,255,255)"
+        );
+      } catch (e) {
+        // The currentWindowGlobal.drawSnapshot might throw
+        // NS_ERROR_LOSS_OF_SIGNIFICANT_DATA if called during navigation.
+        // wait a little and re-try.
+        await new Promise(x => setTimeout(x, 50));
+      }
+    }
+
+    const win = browsingContext.topChromeWindow.ownerGlobal;
+    const canvas = win.document.createElementNS('http://www.w3.org/1999/xhtml', 'canvas');
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    let ctx = canvas.getContext('2d');
+    ctx.drawImage(snapshot, 0, 0);
+    snapshot.close();
+
+    if (mimeType === 'image/jpeg') {
+      if (quality < 0 || quality > 100)
+        throw new Error('Quality must be an integer value between 0 and 100; received ' + quality);
+      quality /= 100;
+    } else {
+      quality = undefined;
+    }
+    const dataURL = canvas.toDataURL(mimeType, quality);
+    return { data: dataURL.substring(dataURL.indexOf(',') + 1) };
   }
 
   async ['Page.getContentQuads'](options) {
     return await this._contentPage.send('getContentQuads', options);
   }
 
-  async ['Page.navigate'](options) {
-    return await this._contentPage.send('navigate', options);
+  async ['Page.navigate']({frameId, url, referer}) {
+    const browsingContext = this._pageTarget.frameIdToBrowsingContext(frameId);
+    let sameDocumentNavigation = false;
+    try {
+      const uri = NetUtil.newURI(url);
+      // This is the same check that verifes browser-side if this is the same-document navigation.
+      // See CanonicalBrowsingContext::SupportsLoadingInParent.
+      sameDocumentNavigation = browsingContext.currentURI && uri.hasRef && uri.equalsExceptRef(browsingContext.currentURI);
+    } catch (e) {
+      throw new Error(`Invalid url: "${url}"`);
+    }
+    let referrerURI = null;
+    let referrerInfo = null;
+    if (referer) {
+      try {
+        referrerURI = NetUtil.newURI(referer);
+        const ReferrerInfo = Components.Constructor(
+          '@mozilla.org/referrer-info;1',
+          'nsIReferrerInfo',
+          'init'
+        );
+        referrerInfo = new ReferrerInfo(Ci.nsIReferrerInfo.UNSAFE_URL, true, referrerURI);
+      } catch (e) {
+        throw new Error(`Invalid referer: "${referer}"`);
+      }
+    }
+
+    let navigationId;
+    const unsubscribe = helper.addObserver((browsingContext, topic, loadIdentifier) => {
+      navigationId = helper.toProtocolNavigationId(loadIdentifier);
+    }, 'juggler-navigation-started-browser');
+    browsingContext.loadURI(Services.io.newURI(url), {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_IS_LINK,
+      referrerInfo,
+      // postData: null,
+      // headers: null,
+      // Fake user activation.
+      hasValidUserGestureActivation: true,
+    });
+    unsubscribe();
+
+    return {
+      navigationId: sameDocumentNavigation ? null : navigationId,
+    };
   }
 
-  async ['Page.goBack'](options) {
-    return await this._contentPage.send('goBack', options);
+  async ['Page.goBack']({}) {
+    const browsingContext = this._pageTarget.linkedBrowser().browsingContext;
+    if (!browsingContext.embedderElement?.canGoBack)
+      return { success: false };
+    browsingContext.goBack();
+    return { success: true };
   }
 
-  async ['Page.goForward'](options) {
-    return await this._contentPage.send('goForward', options);
+  async ['Page.goForward']({}) {
+    const browsingContext = this._pageTarget.linkedBrowser().browsingContext;
+    if (!browsingContext.embedderElement?.canGoForward)
+      return { success: false };
+    browsingContext.goForward();
+    return { success: true };
   }
 
-  async ['Page.reload'](options) {
-    return await this._contentPage.send('reload', options);
+  async ['Page.reload']() {
+    await this._pageTarget.activateAndRun(() => {
+      const doc = this._pageTarget._tab.linkedBrowser.ownerDocument;
+      doc.getElementById('Browser:Reload').doCommand();
+    });
   }
 
   async ['Page.describeNode'](options) {
@@ -314,16 +463,26 @@ class PageHandler {
     return await this._contentPage.send('scrollIntoViewIfNeeded', options);
   }
 
-  async ['Page.addScriptToEvaluateOnNewDocument'](options) {
-    return await this._contentPage.send('addScriptToEvaluateOnNewDocument', options);
+  async ['Page.setInitScripts']({ scripts }) {
+    return await this._pageTarget.setInitScripts(scripts);
   }
 
-  async ['Page.removeScriptToEvaluateOnNewDocument'](options) {
-    return await this._contentPage.send('removeScriptToEvaluateOnNewDocument', options);
-  }
-
-  async ['Page.dispatchKeyEvent'](options) {
-    return await this._contentPage.send('dispatchKeyEvent', options);
+  async ['Page.dispatchKeyEvent']({type, keyCode, code, key, repeat, location, text}) {
+    // key events don't fire if we are dragging.
+    if (this._isDragging) {
+      if (type === 'keydown' && key === 'Escape') {
+        await this._contentPage.send('dispatchDragEvent', {
+          type: 'dragover',
+          x: this._lastMousePosition.x,
+          y: this._lastMousePosition.y,
+          modifiers: 0
+        });
+        await this._contentPage.send('dispatchDragEvent', {type: 'dragend'});
+        this._isDragging = false;
+      }
+      return;
+    }
+    return await this._contentPage.send('dispatchKeyEvent', {type, keyCode, code, key, repeat, location, text});
   }
 
   async ['Page.dispatchTouchEvent'](options) {
@@ -334,8 +493,161 @@ class PageHandler {
     return await this._contentPage.send('dispatchTapEvent', options);
   }
 
-  async ['Page.dispatchMouseEvent'](options) {
-    return await this._contentPage.send('dispatchMouseEvent', options);
+  async ['Page.dispatchMouseEvent']({type, x, y, button, clickCount, modifiers, buttons}) {
+    const win = this._pageTarget._window;
+    const sendEvents = async (types) => {
+      // 1. Scroll element to the desired location first; the coordinates are relative to the element.
+      this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(x, y, 0, 0);
+      // 2. Get element's bounding box in the browser after the scroll is completed.
+      const boundingBox = this._pageTarget._linkedBrowser.getBoundingClientRect();
+      // 3. Make sure compositor is flushed after scrolling.
+      if (win.windowUtils.flushApzRepaints())
+        await helper.awaitTopic('apz-repaints-flushed');
+
+      const watcher = new EventWatcher(this._pageEventSink, types, this._pendingEventWatchers);
+      const promises = [];
+      for (const type of types) {
+        // This dispatches to the renderer synchronously.
+        const jugglerEventId = win.windowUtils.jugglerSendMouseEvent(
+          type,
+          x + boundingBox.left,
+          y + boundingBox.top,
+          button,
+          clickCount,
+          modifiers,
+          false /* aIgnoreRootScrollFrame */,
+          0.0 /* pressure */,
+          0 /* inputSource */,
+          true /* isDOMEventSynthesized */,
+          false /* isWidgetEventSynthesized */,
+          buttons,
+          win.windowUtils.DEFAULT_MOUSE_POINTER_ID /* pointerIdentifier */,
+          false /* disablePointerEvent */
+        );
+        promises.push(watcher.ensureEvent(type, eventObject => eventObject.jugglerEventId === jugglerEventId));
+      }
+      await Promise.all(promises);
+      await watcher.dispose();
+    };
+
+    // We must switch to proper tab in the tabbed browser so that
+    // 1. Event is dispatched to a proper renderer.
+    // 2. We receive an ack from the renderer for the dispatched event.
+    await this._pageTarget.activateAndRun(async () => {
+      this._pageTarget.ensureContextMenuClosed();
+      // If someone asks us to dispatch mouse event outside of viewport, then we normally would drop it.
+      const boundingBox = this._pageTarget._linkedBrowser.getBoundingClientRect();
+      if (x < 0 || y < 0 || x > boundingBox.width || y > boundingBox.height) {
+        if (type !== 'mousemove')
+          return;
+
+        // A special hack: if someone tries to do `mousemove` outside of
+        // viewport coordinates, then move the mouse off from the Web Content.
+        // This way we can eliminate all the hover effects.
+        // NOTE: since this won't go inside the renderer, there's no need to wait for ACK.
+        win.windowUtils.sendMouseEvent(
+          'mousemove',
+          0 /* x */,
+          0 /* y */,
+          button,
+          clickCount,
+          modifiers,
+          false /* aIgnoreRootScrollFrame */,
+          0.0 /* pressure */,
+          0 /* inputSource */,
+          true /* isDOMEventSynthesized */,
+          false /* isWidgetEventSynthesized */,
+          buttons,
+          win.windowUtils.DEFAULT_MOUSE_POINTER_ID /* pointerIdentifier */,
+          false /* disablePointerEvent */
+        );
+        return;
+      }
+
+      if (type === 'mousedown') {
+        if (this._isDragging)
+          return;
+
+        const eventNames = button === 2 ? ['mousedown', 'contextmenu'] : ['mousedown'];
+        await sendEvents(eventNames);
+        return;
+      }
+
+      if (type === 'mousemove') {
+        this._lastMousePosition = { x, y };
+        if (this._isDragging) {
+          const watcher = new EventWatcher(this._pageEventSink, ['dragover'], this._pendingEventWatchers);
+          await this._contentPage.send('dispatchDragEvent', {type:'dragover', x, y, modifiers});
+          await watcher.ensureEventsAndDispose(['dragover']);
+          return;
+        }
+
+        const watcher = new EventWatcher(this._pageEventSink, ['dragstart', 'juggler-drag-finalized'], this._pendingEventWatchers);
+        await sendEvents(['mousemove']);
+
+        // The order of events after 'mousemove' is sent:
+        // 1. [dragstart] - might or might NOT be emitted
+        // 2. [mousemove] - always emitted. This was awaited as part of `sendEvents` call.
+        // 3. [juggler-drag-finalized] - only emitted if dragstart was emitted.
+
+        if (watcher.hasEvent('dragstart')) {
+          const eventObject = await watcher.ensureEvent('juggler-drag-finalized');
+          this._isDragging = eventObject.dragSessionStarted;
+        }
+        watcher.dispose();
+        return;
+      }
+
+      if (type === 'mouseup') {
+        if (this._isDragging) {
+          const watcher = new EventWatcher(this._pageEventSink, ['dragover'], this._pendingEventWatchers);
+          await this._contentPage.send('dispatchDragEvent', {type: 'dragover', x, y, modifiers});
+          await this._contentPage.send('dispatchDragEvent', {type: 'drop', x, y, modifiers});
+          await this._contentPage.send('dispatchDragEvent', {type: 'dragend', x, y, modifiers});
+          // NOTE:
+          // - 'drop' event might not be dispatched at all, depending on dropAction.
+          // - 'dragend' event might not be dispatched at all, if the source element was removed
+          //   during drag. However, it'll be dispatched synchronously in the renderer.
+          await watcher.ensureEventsAndDispose(['dragover']);
+          this._isDragging = false;
+        } else {
+          await sendEvents(['mouseup']);
+        }
+        return;
+      }
+    }, { muteNotificationsPopup: true });
+  }
+
+  async ['Page.dispatchWheelEvent']({x, y, button, deltaX, deltaY, deltaZ, modifiers }) {
+    const deltaMode = 0; // WheelEvent.DOM_DELTA_PIXEL
+    const lineOrPageDeltaX = deltaX > 0 ? Math.floor(deltaX) : Math.ceil(deltaX);
+    const lineOrPageDeltaY = deltaY > 0 ? Math.floor(deltaY) : Math.ceil(deltaY);
+
+    await this._pageTarget.activateAndRun(async () => {
+      this._pageTarget.ensureContextMenuClosed();
+
+      // 1. Scroll element to the desired location first; the coordinates are relative to the element.
+      this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(x, y, 0, 0);
+      // 2. Get element's bounding box in the browser after the scroll is completed.
+      const boundingBox = this._pageTarget._linkedBrowser.getBoundingClientRect();
+
+      const win = this._pageTarget._window;
+      // 3. Make sure compositor is flushed after scrolling.
+      if (win.windowUtils.flushApzRepaints())
+        await helper.awaitTopic('apz-repaints-flushed');
+
+      win.windowUtils.sendWheelEvent(
+        x + boundingBox.left,
+        y + boundingBox.top,
+        deltaX,
+        deltaY,
+        deltaZ,
+        deltaMode,
+        modifiers,
+        lineOrPageDeltaX,
+        lineOrPageDeltaY,
+        0 /* options */);
+    }, { muteNotificationsPopup: true });
   }
 
   async ['Page.insertText'](options) {
@@ -356,8 +668,20 @@ class PageHandler {
       dialog.dismiss();
   }
 
-  async ['Page.setInterceptFileChooserDialog'](options) {
-    return await this._contentPage.send('setInterceptFileChooserDialog', options);
+  async ['Page.setInterceptFileChooserDialog']({ enabled }) {
+    return await this._pageTarget.setInterceptFileChooserDialog(enabled);
+  }
+
+  async ['Page.startScreencast'](options) {
+    return await this._pageTarget.startScreencast(options);
+  }
+
+  async ['Page.screencastFrameAck'](options) {
+    await this._pageTarget.screencastFrameAck(options);
+  }
+
+  async ['Page.stopScreencast'](options) {
+    await this._pageTarget.stopScreencast(options);
   }
 
   async ['Page.sendMessageToWorker']({workerId, message}) {
@@ -366,11 +690,4 @@ class PageHandler {
       throw new Error('ERROR: cannot find worker with id ' + workerId);
     return await worker.sendMessage(JSON.parse(message));
   }
-
-  async ['Page.stopVideoRecording']() {
-    await this._pageTarget.stopVideoRecording();
-  }
 }
-
-var EXPORTED_SYMBOLS = ['PageHandler'];
-this.PageHandler = PageHandler;

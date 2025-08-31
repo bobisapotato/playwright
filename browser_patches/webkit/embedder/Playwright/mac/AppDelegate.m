@@ -33,6 +33,7 @@
 #import <WebKit/WKUserContentControllerPrivate.h>
 #import <WebKit/WKWebViewConfigurationPrivate.h>
 #import <WebKit/WKWebViewPrivate.h>
+#import <WebKit/WKWebpagePreferencesPrivate.h>
 #import <WebKit/WKWebsiteDataStorePrivate.h>
 #import <WebKit/WebNSURLExtras.h>
 #import <WebKit/WebKit.h>
@@ -97,7 +98,7 @@ const NSActivityOptions ActivityOptions =
 
     for (NSString *argument in subArray) {
         if (![argument hasPrefix:@"--"])
-            _initialURL = argument;
+            _initialURL = [argument copy];
         if ([argument hasPrefix:@"--user-data-dir="]) {
             NSRange range = NSMakeRange(16, [argument length] - 16);
             _userDataDir = [[argument substringWithRange:range] copy];
@@ -179,6 +180,9 @@ const NSActivityOptions ActivityOptions =
     if (!dataStore) {
         _WKWebsiteDataStoreConfiguration *configuration = [[[_WKWebsiteDataStoreConfiguration alloc] init] autorelease];
         if (_userDataDir) {
+            // Local storage state should be stored in separate dirs for persistent contexts.
+            [configuration setUnifiedOriginStorageLevel:_WKUnifiedOriginStorageLevelNone];
+
             NSURL *cookieFile = [NSURL fileURLWithPath:[NSString stringWithFormat:@"%@/cookie.db", _userDataDir]];
             [configuration _setCookieStorageFile:cookieFile];
 
@@ -226,18 +230,24 @@ const NSActivityOptions ActivityOptions =
     if (!configuration) {
         configuration = [[WKWebViewConfiguration alloc] init];
         configuration.websiteDataStore = [self persistentDataStore];
-        configuration.preferences._fullScreenEnabled = YES;
+        configuration._controlledByAutomation = true;
+        configuration.preferences.elementFullscreenEnabled = YES;
         configuration.preferences._developerExtrasEnabled = YES;
         configuration.preferences._mediaDevicesEnabled = YES;
         configuration.preferences._mockCaptureDevicesEnabled = YES;
+        // Enable WebM support.
         configuration.preferences._hiddenPageDOMTimerThrottlingEnabled = NO;
         configuration.preferences._hiddenPageDOMTimerThrottlingAutoIncreases = NO;
         configuration.preferences._pageVisibilityBasedProcessSuppressionEnabled = NO;
         configuration.preferences._domTimersThrottlingEnabled = NO;
-        configuration.preferences._requestAnimationFrameEnabled = YES;
+        // Do not auto play audio and video with sound.
+        configuration.defaultWebpagePreferences._autoplayPolicy = _WKWebsiteAutoplayPolicyAllowWithoutSound;
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Wdeprecated-declarations"
         _WKProcessPoolConfiguration *processConfiguration = [[[_WKProcessPoolConfiguration alloc] init] autorelease];
         processConfiguration.forceOverlayScrollbars = YES;
         configuration.processPool = [[[WKProcessPool alloc] _initWithConfiguration:processConfiguration] autorelease];
+        #pragma clang diagnostic pop
     }
     return configuration;
 }
@@ -280,7 +290,10 @@ const NSActivityOptions ActivityOptions =
             continue;
         WKWebViewConfiguration *configuration = [[[self defaultConfiguration] copy] autorelease];
         configuration.websiteDataStore = [browserContext dataStore];
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Wdeprecated-declarations"
         configuration.processPool = [browserContext processPool];
+        #pragma clang diagnostic pop
         return configuration;
     }
     return [self defaultConfiguration];
@@ -339,8 +352,11 @@ const NSActivityOptions ActivityOptions =
 - (_WKBrowserContext *)createBrowserContext:(NSString *)proxyServer WithBypassList:(NSString *) proxyBypassList
 {
     _WKBrowserContext *browserContext = [[_WKBrowserContext alloc] init];
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     _WKProcessPoolConfiguration *processConfiguration = [[[_WKProcessPoolConfiguration alloc] init] autorelease];
     processConfiguration.forceOverlayScrollbars = YES;
+    #pragma clang diagnostic pop
     _WKWebsiteDataStoreConfiguration *dataStoreConfiguration = [[[_WKWebsiteDataStoreConfiguration alloc] initNonPersistentConfiguration] autorelease];
     if (!proxyServer || ![proxyServer length])
         proxyServer = _proxyServer;
@@ -348,7 +364,10 @@ const NSActivityOptions ActivityOptions =
         proxyBypassList = _proxyBypassList;
     [dataStoreConfiguration setProxyConfiguration:[self proxyConfiguration:proxyServer WithBypassList:proxyBypassList]];
     browserContext.dataStore = [[[WKWebsiteDataStore alloc] _initWithConfiguration:dataStoreConfiguration] autorelease];
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     browserContext.processPool = [[[WKProcessPool alloc] _initWithConfiguration:processConfiguration] autorelease];
+    #pragma clang diagnostic pop
     [_browserContexts addObject:browserContext];
     return browserContext;
 }
@@ -451,6 +470,16 @@ const NSActivityOptions ActivityOptions =
         decisionHandler(WKNavigationActionPolicyDownload);
         return;
     }
+
+    if (navigationAction.buttonNumber == 1 &&
+        (navigationAction.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagShift)) != 0) {
+        WKWindowFeatures* windowFeatures = [[[WKWindowFeatures alloc] init] autorelease];
+        WKWebView* newView = [self webView:webView createWebViewWithConfiguration:webView.configuration forNavigationAction:navigationAction windowFeatures:windowFeatures];
+        [newView loadRequest:navigationAction.request];
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+
     if (navigationAction._canHandleRequest) {
         decisionHandler(WKNavigationActionPolicyAllow);
         return;
@@ -464,7 +493,19 @@ const NSActivityOptions ActivityOptions =
       decisionHandler(WKNavigationResponsePolicyAllow);
       return;
     }
+
     NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)navigationResponse.response;
+
+    NSString *contentType = [httpResponse valueForHTTPHeaderField:@"Content-Type"];
+    if (!navigationResponse.canShowMIMEType && (contentType && [contentType length] > 0)) {
+        decisionHandler(WKNavigationResponsePolicyDownload);
+        return;
+    }
+
+    if (contentType && ([contentType isEqualToString:@"application/pdf"] || [contentType isEqualToString:@"text/pdf"])) {
+        decisionHandler(WKNavigationResponsePolicyDownload);
+        return;
+    }
 
     NSString *disposition = [[httpResponse allHeaderFields] objectForKey:@"Content-Disposition"];
     if (disposition && [disposition hasPrefix:@"attachment"]) {
@@ -482,6 +523,12 @@ const NSActivityOptions ActivityOptions =
 - (void)webView:(WKWebView *)webView navigationResponse:(WKNavigationResponse *)navigationResponse didBecomeDownload:(WKDownload *)download
 {
     download.delegate = self;
+}
+
+// Always automatically accept requestStorageAccess dialog.
+- (void)_webView:(WKWebView *)webView requestStorageAccessPanelForDomain:(NSString *)requestingDomain underCurrentDomain:(NSString *)currentDomain completionHandler:(void (^)(BOOL result))completionHandler
+{
+    completionHandler(true);
 }
 
 #pragma mark WKDownloadDelegate

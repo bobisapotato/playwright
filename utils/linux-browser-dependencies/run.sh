@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 set +x
 
@@ -28,8 +28,9 @@ function cleanup() {
 trap "cleanup; cd $(pwd -P)" EXIT
 cd "$(dirname "$0")"
 
-# We rely on `./playwright.tar.gz` to download browsers into the docker image.
-node ../../packages/build_package.js playwright ./playwright.tar.gz
+# We rely on `./playwright-core.tar.gz` to download browsers into the docker
+# image.
+node ../../utils/pack_package.js playwright-core ./playwright-core.tar.gz
 
-docker run -v $PWD:/root/hostfolder --rm -it "$1" /root/hostfolder/inside_docker/process.sh "$2"
+docker run --platform linux/amd64 -v $PWD:/root/hostfolder --rm -it "$1" /root/hostfolder/inside_docker/process.sh "$2"
 

@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
     "strict": true,
-    "target": "es2015",
+    "target": "ESNext",
     "noEmit": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
   },
   "include": [
     "test.ts"

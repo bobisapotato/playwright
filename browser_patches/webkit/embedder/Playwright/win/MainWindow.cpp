@@ -28,6 +28,7 @@
 #include "MainWindow.h"
 #include "PlaywrightLibResource.h"
 #include "WebKitBrowserWindow.h"
+#include <WebKit/WKPreferencesRefPrivate.h>
 #include <sstream>
 
 namespace WebCore {
@@ -47,12 +48,12 @@ static INT_PTR CALLBACK About(HWND, UINT, WPARAM, LPARAM);
 std::wstring MainWindow::s_windowClass;
 size_t MainWindow::s_numInstances;
 
-bool MainWindow::s_headless = false;
-bool MainWindow::s_noStartupWindow = false;
+bool MainWindow::s_controlledRemotely = false;
+bool MainWindow::s_disableAcceleratedCompositing = false;
 
-void MainWindow::configure(bool headless, bool noStartupWindow) {
-    s_headless = headless;
-    s_noStartupWindow = noStartupWindow;
+void MainWindow::configure(bool controlledRemotely, bool disableAcceleratedCompositing) {
+    s_controlledRemotely = controlledRemotely;
+    s_disableAcceleratedCompositing = disableAcceleratedCompositing;
 }
 
 static std::wstring loadString(int id)
@@ -137,7 +138,7 @@ void MainWindow::createToolbar(HINSTANCE hInstance)
     SendMessage(m_hToolbarWnd, TB_ADDBUTTONS, _countof(tbButtons), reinterpret_cast<LPARAM>(&tbButtons));
     ShowWindow(m_hToolbarWnd, true);
 
-    m_hURLBarWnd = CreateWindow(L"EDIT", 0, WS_CHILD | WS_VISIBLE | WS_BORDER | ES_LEFT | ES_AUTOVSCROLL, 0, 0, 0, 0, m_hToolbarWnd, 0, hInstance, 0);
+    m_hURLBarWnd = CreateWindow(L"EDIT", 0, WS_CHILD | WS_VISIBLE | WS_BORDER | ES_LEFT | ES_AUTOHSCROLL, 0, 0, 0, 0, m_hToolbarWnd, 0, hInstance, 0);
 
     DefEditProc = reinterpret_cast<WNDPROC>(GetWindowLongPtr(m_hURLBarWnd, GWLP_WNDPROC));
     SetWindowLongPtr(m_hURLBarWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(EditProc));
@@ -180,6 +181,8 @@ bool MainWindow::init(HINSTANCE hInstance, WKPageConfigurationRef conf)
     WKPageConfigurationSetPreferences(conf, prefs.get());
     WKPreferencesSetMediaCapabilitiesEnabled(prefs.get(), false);
     WKPreferencesSetDeveloperExtrasEnabled(prefs.get(), true);
+    if (s_disableAcceleratedCompositing)
+      WKPreferencesSetAcceleratedCompositingEnabled(prefs.get(), false);
 
     m_configuration = conf;
 
@@ -205,7 +208,9 @@ bool MainWindow::init(HINSTANCE hInstance, WKPageConfigurationRef conf)
     resizeSubViews();
 
     if (s_headless) {
+        auto menu = GetMenu(m_hMainWnd);
         SetMenu(m_hMainWnd, NULL);
+        DestroyMenu(menu);
     } else {
         SetFocus(m_hURLBarWnd);
         ShowWindow(m_hMainWnd, SW_SHOW);
@@ -324,7 +329,7 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPA
     case WM_NCDESTROY:
         SetWindowLongPtr(hWnd, GWLP_USERDATA, 0);
         delete thisWindow;
-        if (s_noStartupWindow || s_numInstances > 0)
+        if (s_controlledRemotely || s_numInstances > 0)
             return 0;
         PostQuitMessage(0);
         break;

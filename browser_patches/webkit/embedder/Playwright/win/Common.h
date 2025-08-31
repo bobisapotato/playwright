@@ -26,16 +26,17 @@
 #pragma once
 
 #include "stdafx.h"
+#include <optional>
 #include <WebKit/WKRetainPtr.h>
 #include <WebKit/WKString.h>
 #include <WebKit/WKURL.h>
-#include <wtf/Optional.h>
 
 struct CommandLineOptions {
     bool useFullDesktop { };
     bool inspectorPipe { };
     bool headless { };
     bool noStartupWindow { };
+    bool disableAcceleratedCompositing { };
     _bstr_t requestedURL;
     _bstr_t userDataDir;
     _bstr_t curloptProxy;
@@ -55,7 +56,7 @@ void computeFullDesktopFrame();
 bool getAppDataFolder(_bstr_t& directory);
 CommandLineOptions parseCommandLine();
 void createCrashReport(EXCEPTION_POINTERS*);
-Optional<Credential> askCredential(HWND, const std::wstring& realm);
+std::optional<Credential> askCredential(HWND, const std::wstring& realm);
 
 bool askServerTrustEvaluation(HWND, const std::wstring& text);
 std::wstring replaceString(std::wstring src, const std::wstring& oldValue, const std::wstring& newValue);
@@ -63,6 +64,7 @@ std::wstring replaceString(std::wstring src, const std::wstring& oldValue, const
 extern HINSTANCE hInst;
 extern POINT s_windowPosition;
 extern SIZE s_windowSize;
+extern bool s_headless;
 
 std::wstring createString(WKStringRef wkString);
 std::wstring createString(WKURLRef wkURL);

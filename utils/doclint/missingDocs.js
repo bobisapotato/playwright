@@ -22,6 +22,8 @@ const path = require('path');
 
 /** @typedef {import('../../markdown').MarkdownNode} MarkdownNode */
 
+const IGNORE_CLASSES = ['PlaywrightAssertions', 'GenericAssertions', 'LocatorAssertions', 'PageAssertions', 'APIResponseAssertions', 'SnapshotAssertions'];
+
 module.exports = function lint(documentation, jsSources, apiFileName) {
   const errors = [];
   documentation.copyDocsFromSuperclasses(errors);
@@ -33,36 +35,38 @@ module.exports = function lint(documentation, jsSources, apiFileName) {
       continue;
     }
     for (const [methodName, params] of methods) {
-      const member = docClass.membersArray.find(m => m.alias === methodName && m.kind !== 'event');
-      if (!member) {
+      const members = docClass.membersArray.filter(m => m.alias === methodName && m.kind !== 'event');
+      if (!members.length) {
         errors.push(`Missing documentation for "${className}.${methodName}"`);
         continue;
       }
-      const memberParams = paramsForMember(member);
       for (const paramName of params) {
-        if (!memberParams.has(paramName))
+        const found = members.some(member => paramsForMember(member).has(paramName));
+        if (!found && !paramName.startsWith('_'))
           errors.push(`Missing documentation for "${className}.${methodName}.${paramName}"`);
       }
     }
   }
   for (const cls of documentation.classesArray) {
+    if (IGNORE_CLASSES.includes(cls.name))
+      continue;
     const methods = apiMethods.get(cls.name);
     if (!methods) {
       errors.push(`Documented "${cls.name}" not found in sources`);
       continue;
     }
     for (const member of cls.membersArray) {
-      if (member.kind === 'event')
+      if (member.kind === 'event' || member.alias === 'removeAllListeners')
         continue;
       const params = methods.get(member.alias);
       if (!params) {
-        errors.push(`Documented "${cls.name}.${member.alias}" not found is sources`);
+        errors.push(`Documented "${cls.name}.${member.alias}" not found in sources`);
         continue;
       }
       const memberParams = paramsForMember(member);
       for (const paramName of memberParams) {
         if (!params.has(paramName) && paramName !== 'options')
-          errors.push(`Documented "${cls.name}.${member.alias}.${paramName}" not found is sources`);
+          errors.push(`Documented "${cls.name}.${member.alias}.${paramName}" not found in sources`);
       }
     }
   }
@@ -111,6 +115,18 @@ function listMethods(rootNames, apiFileName) {
 
   /**
    * @param {string} className
+   * @param {string} methodName
+   */
+  function shouldSkipMethodByName(className, methodName) {
+    if (methodName.startsWith('_') || methodName === 'T' || methodName === 'toString')
+      return true;
+    if (EventEmitter.prototype.hasOwnProperty(methodName))
+      return true;
+    return false;
+  }
+
+  /**
+   * @param {string} className
    * @param {!ts.Type} classType
    */
   function visitClass(className, classType) {
@@ -120,14 +136,12 @@ function listMethods(rootNames, apiFileName) {
       apiMethods.set(className, methods);
     }
     for (const [name, member] of /** @type {any[]} */(classType.symbol.members || [])) {
-      if (name.startsWith('_') || name === 'T' || name === 'toString')
-        continue;
-      if (/** @type {any} */(EventEmitter).prototype.hasOwnProperty(name))
+      if (shouldSkipMethodByName(className, name))
         continue;
       const memberType = checker.getTypeOfSymbolAtLocation(member, member.valueDeclaration);
       const signature = signatureForType(memberType);
       if (signature)
-        methods.set(name, new Set(signature.parameters.map(p => p.escapedName)));
+        methods.set(name, new Set(signature.parameters.filter(p => !p.escapedName.startsWith('_')).map(p => p.escapedName)));
       else
         methods.set(name, new Set());
     }

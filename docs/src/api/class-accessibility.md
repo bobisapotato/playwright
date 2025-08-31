@@ -1,5 +1,7 @@
 # class: Accessibility
+* since: v1.8
 * langs: csharp, js, python
+* deprecated: This class is deprecated. Please use other libraries such as [Axe](https://www.deque.com/axe/) if you need to test page accessibility. See our Node.js [guide](https://playwright.dev/docs/accessibility-testing) for integration with Axe.
 
 The Accessibility class provides methods for inspecting Chromium's accessibility tree. The accessibility tree is used by
 assistive technology such as [screen readers](https://en.wikipedia.org/wiki/Screen_reader) or
@@ -8,7 +10,7 @@ assistive technology such as [screen readers](https://en.wikipedia.org/wiki/Scre
 Accessibility is a very platform-specific thing. On different platforms, there are different screen readers that might
 have wildly different output.
 
-Rendering engines of Chromium, Firefox and Webkit have a concept of "accessibility tree", which is then translated into different
+Rendering engines of Chromium, Firefox and WebKit have a concept of "accessibility tree", which is then translated into different
 platform-specific APIs. Accessibility namespace gives access to this Accessibility Tree.
 
 Most of the accessibility tree gets filtered out when converting from internal browser AX Tree to Platform-specific AX-Tree or by
@@ -16,8 +18,11 @@ assistive technologies themselves. By default, Playwright tries to approximate t
 "interesting" nodes of the tree.
 
 ## async method: Accessibility.snapshot
+* since: v1.8
+* deprecated: This method is deprecated. Please use other libraries such as [Axe](https://www.deque.com/axe/) if you need to test page accessibility. See our Node.js [guide](https://playwright.dev/docs/accessibility-testing) for integration with Axe.
+
 - returns: <[null]|[Object]>
-  - `role` <[string]> The [role](https://www.w3.org/TR/wai-aria/#usage_intro).
+  - `role` <[string]> The [role](https://www.w3.org/TR/wai-aria/#usage).
   - `name` <[string]> A human readable name for the node.
   - `value` <[string]|[float]> The current value of the node, if applicable.
   - `description` <[string]> An additional human readable description of the node, if applicable.
@@ -52,6 +57,8 @@ The Chromium accessibility tree contains nodes that go unused on most platforms 
 will discard them as well for an easier to process tree, unless [`option: interestingOnly`] is set to `false`.
 :::
 
+**Usage**
+
 An example of dumping the entire accessibility tree:
 
 ```js
@@ -75,8 +82,8 @@ print(snapshot)
 ```
 
 ```csharp
-var accessibilitySnapshot = await Page.Accessibility.SnapshotAsync();
-Console.WriteLine(accessibilitySnapshot);
+var accessibilitySnapshot = await page.Accessibility.SnapshotAsync();
+Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(accessibilitySnapshot));
 ```
 
 An example of logging the focused node's name:
@@ -91,33 +98,16 @@ function findFocusedNode(node) {
     return node;
   for (const child of node.children || []) {
     const foundNode = findFocusedNode(child);
-    return foundNode;
+    if (foundNode)
+      return foundNode;
   }
   return null;
 }
 ```
 
 ```csharp
-Func<AccessibilitySnapshotResult, AccessibilitySnapshotResult> findFocusedNode = root =>
-{
-    var nodes = new Stack<AccessibilitySnapshotResult>(new[] { root });
-    while (nodes.Count > 0)
-    {
-        var node = nodes.Pop();
-        if (node.Focused) return node;
-        foreach (var innerNode in node.Children)
-        {
-            nodes.Push(innerNode);
-        }
-    }
-
-    return null;
-};
-
-var accessibilitySnapshot = await Page.Accessibility.SnapshotAsync();
-var focusedNode = findFocusedNode(accessibilitySnapshot);
-if(focusedNode != null)
-  Console.WriteLine(focusedNode.Name);
+var accessibilitySnapshot = await page.Accessibility.SnapshotAsync();
+Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(accessibilitySnapshot));
 ```
 
 ```java
@@ -127,11 +117,12 @@ String snapshot = page.accessibility().snapshot();
 
 ```python async
 def find_focused_node(node):
-    if (node.get("focused"))
+    if node.get("focused"):
         return node
     for child in (node.get("children") or []):
         found_node = find_focused_node(child)
-        return found_node
+        if found_node:
+            return found_node
     return None
 
 snapshot = await page.accessibility.snapshot()
@@ -142,11 +133,12 @@ if node:
 
 ```python sync
 def find_focused_node(node):
-    if (node.get("focused"))
+    if node.get("focused"):
         return node
     for child in (node.get("children") or []):
         found_node = find_focused_node(child)
-        return found_node
+        if found_node:
+            return found_node
     return None
 
 snapshot = page.accessibility.snapshot()
@@ -156,15 +148,23 @@ if node:
 ```
 
 ## async method: Accessibility.snapshot
+* since: v1.8
 * langs: java
 - returns: <[null]|[string]>
 
+## async method: Accessibility.snapshot
+* since: v1.8
+* langs: csharp
+- returns: <[null]|[JsonElement]>
+
 ### option: Accessibility.snapshot.interestingOnly
+* since: v1.8
 - `interestingOnly` <[boolean]>
 
 Prune uninteresting nodes from the tree. Defaults to `true`.
 
 ### option: Accessibility.snapshot.root
+* since: v1.8
 - `root` <[ElementHandle]>
 
 The root DOM element for the snapshot. Defaults to the whole page.

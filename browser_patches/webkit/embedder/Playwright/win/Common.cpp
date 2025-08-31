@@ -34,7 +34,6 @@
 #include "PlaywrightReplace.h"
 #include <dbghelp.h>
 #include <shlobj.h>
-#include <wtf/Optional.h>
 #include <wtf/StdLibExtras.h>
 #include <vector>
 
@@ -44,6 +43,8 @@ HINSTANCE hInst;
 // Support moving the transparent window
 POINT s_windowPosition = { 100, 100 };
 SIZE s_windowSize = { 500, 200 };
+
+bool s_headless;
 
 namespace WebCore {
 float deviceScaleFactorForWindow(HWND);
@@ -61,14 +62,6 @@ void computeFullDesktopFrame()
     s_windowPosition.y = 0;
     s_windowSize.cx = scaleFactor * (desktop.right - desktop.left);
     s_windowSize.cy = scaleFactor * (desktop.bottom - desktop.top);
-}
-
-BOOL WINAPI DllMain(HINSTANCE dllInstance, DWORD reason, LPVOID)
-{
-    if (reason == DLL_PROCESS_ATTACH)
-        hInst = dllInstance;
-
-    return TRUE;
 }
 
 bool getAppDataFolder(_bstr_t& directory)
@@ -122,7 +115,7 @@ void createCrashReport(EXCEPTION_POINTERS* exceptionPointers)
     }
 }
 
-Optional<Credential> askCredential(HWND hwnd, const std::wstring& realm)
+std::optional<Credential> askCredential(HWND hwnd, const std::wstring& realm)
 {
     struct AuthDialog : public Dialog {
         std::wstring realm;
@@ -146,7 +139,7 @@ Optional<Credential> askCredential(HWND hwnd, const std::wstring& realm)
 
     if (dialog.run(hInst, hwnd, IDD_AUTH))
         return dialog.credential;
-    return WTF::nullopt;
+    return std::nullopt;
 }
 
 bool askServerTrustEvaluation(HWND hwnd, const std::wstring& text)
@@ -198,6 +191,8 @@ CommandLineOptions parseCommandLine()
             options.headless = true;
         else if (!wcsicmp(argv[i], L"--no-startup-window"))
             options.noStartupWindow = true;
+        else if (!wcsicmp(argv[i], L"--disable-accelerated-compositing"))
+            options.disableAcceleratedCompositing = true;
         else if (!options.requestedURL)
             options.requestedURL = argv[i];
     }

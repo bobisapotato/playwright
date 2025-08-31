@@ -34,22 +34,25 @@
 #include <WebKit/WKCredential.h>
 #include <WebKit/WKFramePolicyListener.h>
 #include <WebKit/WKInspector.h>
+#include <WebKit/WKPagePrivate.h>
 #include <WebKit/WKProtectionSpace.h>
 #include <WebKit/WKProtectionSpaceCurl.h>
 #include <WebKit/WKWebsiteDataStoreRef.h>
 #include <WebKit/WKWebsiteDataStoreRefCurl.h>
 #include <vector>
 
-std::wstring createPEMString(WKCertificateInfoRef certificateInfo)
+std::wstring createPEMString(WKProtectionSpaceRef protectionSpace)
 {
-    auto chainSize = WKCertificateInfoGetCertificateChainSize(certificateInfo);
+    auto chain = adoptWK(WKProtectionSpaceCopyCertificateChain(protectionSpace));
 
     std::wstring pems;
 
-    for (auto i = 0; i < chainSize; i++) {
-        auto certificate = adoptWK(WKCertificateInfoCopyCertificateAtIndex(certificateInfo, i));
-        auto size = WKDataGetSize(certificate.get());
-        auto data = WKDataGetBytes(certificate.get());
+    for (size_t i = 0; i < WKArrayGetSize(chain.get()); i++) {
+        auto item = WKArrayGetItemAtIndex(chain.get(), i);
+        assert(WKGetTypeID(item) == WKDataGetTypeID());
+        auto certificate = static_cast<WKDataRef>(item);
+        auto size = WKDataGetSize(certificate);
+        auto data = WKDataGetBytes(certificate);
 
         for (size_t i = 0; i < size; i++)
             pems.push_back(data[i]);
@@ -99,8 +102,11 @@ WebKitBrowserWindow::WebKitBrowserWindow(BrowserWindowClient& client, HWND mainW
     WKPagePolicyClientV1 policyClient = { };
     policyClient.base.version = 1;
     policyClient.base.clientInfo = this;
-    policyClient.decidePolicyForResponse_deprecatedForUseWithV0 = decidePolicyForResponse;
+    policyClient.decidePolicyForResponse = decidePolicyForResponse;
+    policyClient.decidePolicyForNavigationAction = decidePolicyForNavigationAction;
     WKPageSetPagePolicyClient(page, &policyClient.base);
+
+    WKPageSetControlledByAutomation(page, true);
     resetZoom();
 }
 
@@ -237,7 +243,7 @@ void WebKitBrowserWindow::didReceiveAuthenticationChallenge(WKPageRef page, WKAu
             WKAuthenticationDecisionListenerUseCredential(decisionListener, wkCredential.get());
             return;
         }
-    } else {
+    } else if (!s_headless) {
         WKRetainPtr<WKStringRef> realm(WKProtectionSpaceCopyRealm(protectionSpace));
 
         if (auto credential = askCredential(thisWindow.hwnd(), createString(realm.get()))) {
@@ -255,10 +261,9 @@ void WebKitBrowserWindow::didReceiveAuthenticationChallenge(WKPageRef page, WKAu
 bool WebKitBrowserWindow::canTrustServerCertificate(WKProtectionSpaceRef protectionSpace)
 {
     auto host = createString(adoptWK(WKProtectionSpaceCopyHost(protectionSpace)).get());
-    auto certificateInfo = adoptWK(WKProtectionSpaceCopyCertificateInfo(protectionSpace));
-    auto verificationError = WKCertificateInfoGetVerificationError(certificateInfo.get());
-    auto description = createString(adoptWK(WKCertificateInfoCopyVerificationErrorDescription(certificateInfo.get())).get());
-    auto pem = createPEMString(certificateInfo.get());
+    auto verificationError = WKProtectionSpaceGetCertificateVerificationError(protectionSpace);
+    auto description = createString(adoptWK(WKProtectionSpaceCopyCertificateVerificationErrorDescription(protectionSpace)).get());
+    auto pem = createPEMString(protectionSpace);
 
     auto it = m_acceptedServerTrustCerts.find(host);
     if (it != m_acceptedServerTrustCerts.end() && it->second == pem)
@@ -268,6 +273,9 @@ bool WebKitBrowserWindow::canTrustServerCertificate(WKProtectionSpaceRef protect
     textString.append(L"[ERROR] " + std::to_wstring(verificationError) + L"\r\n");
     textString.append(L"[DESCRIPTION] " + description + L"\r\n");
     textString.append(pem);
+
+    if (s_headless)
+        return false;
 
     if (askServerTrustEvaluation(hwnd(), textString)) {
         m_acceptedServerTrustCerts.emplace(host, pem);
@@ -384,9 +392,24 @@ void WebKitBrowserWindow::didNotHandleKeyEvent(WKPageRef, WKNativeEventPtr event
     PostMessage(thisWindow.m_hMainWnd, event->message, event->wParam, event->lParam);
 }
 
-void WebKitBrowserWindow::decidePolicyForResponse(WKPageRef page, WKFrameRef frame, WKURLResponseRef response, WKURLRequestRef request, WKFramePolicyListenerRef listener, WKTypeRef userData, const void* clientInfo)
+void WebKitBrowserWindow::decidePolicyForNavigationAction(WKPageRef page, WKFrameRef frame, WKFrameNavigationType navigationType, WKEventModifiers modifiers, WKEventMouseButton mouseButton, WKFrameRef originatingFrame, WKURLRequestRef request, WKFramePolicyListenerRef listener, WKTypeRef userData, const void* clientInfo)
 {
-    if (WKURLResponseIsAttachment(response))
+    WebKitBrowserWindow* browserWindow = reinterpret_cast<WebKitBrowserWindow*>(const_cast<void*>(clientInfo));
+    if (navigationType == kWKFrameNavigationTypeLinkClicked &&
+        mouseButton == kWKEventMouseButtonLeftButton &&
+        (modifiers & (kWKEventModifiersShiftKey | kWKEventModifiersControlKey)) != 0) {
+        WKRetainPtr<WKPageRef> newPage = createViewCallback(WKPageCopyPageConfiguration(page), false);
+        WKPageLoadURLRequest(newPage.get(), request);
+        WKFramePolicyListenerIgnore(listener);
+        return;
+    }
+    WKFramePolicyListenerUse(listener);
+}
+
+void WebKitBrowserWindow::decidePolicyForResponse(WKPageRef page, WKFrameRef frame, WKURLResponseRef response, WKURLRequestRef request, bool canShowMIMEType, WKFramePolicyListenerRef listener, WKTypeRef userData, const void* clientInfo)
+{
+    // Safari renders resources without content-type as text.
+    if (WKURLResponseIsAttachment(response) || (!WKStringIsEmpty(WKURLResponseCopyMIMEType(response)) && !canShowMIMEType))
         WKFramePolicyListenerDownload(listener);
     else
         WKFramePolicyListenerUse(listener);

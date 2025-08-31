@@ -17,8 +17,6 @@
 // @ts-check
 
 const path = require('path');
-const fs = require('fs');
-const Documentation = require('./documentation');
 const { parseApi } = require('./api_parser');
 const PROJECT_DIR = path.join(__dirname, '..', '..');
 
@@ -27,26 +25,26 @@ const PROJECT_DIR = path.join(__dirname, '..', '..');
   documentation.setLinkRenderer(item => {
     const { clazz, param, option } = item;
     if (param)
-      return `\`${param}\``;
+      return `\`${param.alias}\``;
     if (option)
-      return `\`${option}\``;
+      return `\`${option.alias}\``;
     if (clazz)
       return `\`${clazz.name}\``;
   });
   documentation.generateSourceCodeComments();
   const result = serialize(documentation);
-  fs.writeFileSync(path.join(PROJECT_DIR, 'api.json'), JSON.stringify(result));
+  console.log(JSON.stringify(result));
 }
 
 /**
- * @param {Documentation} documentation
+ * @param {import('./documentation').Documentation} documentation
  */
 function serialize(documentation) {
   return documentation.classesArray.map(serializeClass);
 }
 
 /**
- * @param {Documentation.Class} clazz
+ * @param {import('./documentation').Class} clazz
  */
 function serializeClass(clazz) {
   const result = { name: clazz.name, spec: clazz.spec };
@@ -59,30 +57,38 @@ function serializeClass(clazz) {
   }
   if (clazz.comment)
     result.comment = clazz.comment;
+  if (clazz.since)
+    result.since = clazz.since;
   result.members = clazz.membersArray.map(serializeMember);
   return result;
 }
 
 /**
- * @param {Documentation.Member} member
+ * @param {import('./documentation').Member} member
  */
 function serializeMember(member) {
   const result = /** @type {any} */ ({ ...member });
   sanitize(result);
   result.args = member.argsArray.map(serializeProperty);
   if (member.type)
-    result.type = serializeType(member.type)
+    result.type = serializeType(member.type);
   return result;
 }
 
+/**
+ * @param {import('./documentation').Member} arg
+ */
 function serializeProperty(arg) {
-  const result = { ...arg };
+  const result = { ...arg, parent: undefined };
   sanitize(result);
   if (arg.type)
-    result.type = serializeType(arg.type)
+    result.type = serializeType(arg.type);
   return result;
 }
 
+/**
+ * @param {object} result
+ */
 function sanitize(result) {
   delete result.args;
   delete result.argsArray;
@@ -91,7 +97,7 @@ function sanitize(result) {
 }
 
 /**
- * @param {Documentation.Type} type
+ * @param {import('./documentation').Type} type
  */
 function serializeType(type) {
   /** @type {any} */
@@ -99,11 +105,11 @@ function serializeType(type) {
   if (type.properties)
     result.properties = type.properties.map(serializeProperty);
   if (type.union)
-    result.union = type.union.map(serializeType);
+    result.union = type.union.map(type => serializeType(type));
   if (type.templates)
-    result.templates = type.templates.map(serializeType);
+    result.templates = type.templates.map(type => serializeType(type));
   if (type.args)
-    result.args = type.args.map(serializeType);
+    result.args = type.args.map(type => serializeType(type));
   if (type.returnType)
     result.returnType = serializeType(type.returnType);
   return result;

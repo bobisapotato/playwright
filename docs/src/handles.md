@@ -3,6 +3,8 @@ id: handles
 title: "Handles"
 ---
 
+## Introduction
+
 Playwright can create handles to the page DOM elements or any other objects inside the
 page. These handles live in the Playwright process, whereas the actual objects live
 in the browser. There are two types of handles:
@@ -43,30 +45,15 @@ js_handle = page.evaluate_handle('window')
 #  Use jsHandle for evaluations.
 ```
 
-```js
-const ulElementHandle = await page.waitForSelector('ul');
-//  Use ulElementHandle for actions and evaluation.
-```
-
-```java
-ElementHandle ulElementHandle = page.waitForSelector("ul");
-//  Use ulElementHandle for actions and evaluation.
-```
-
-```python async
-ul_element_handle = await page.wait_for_selector('ul')
-#  Use ul_element_handle for actions and evaluation.
-```
-
-```python sync
-ul_element_handle = page.wait_for_selector('ul')
-#  Use ul_element_handle for actions and evaluation.
+```csharp
+var jsHandle = await page.EvaluateHandleAsync("window");
+//  Use jsHandle for evaluations.
 ```
 
 ## Element Handles
 
-:::note
-It is recommended to use selector-based actions like [`method: Page.click`] rather than using the [ElementHandle] for input actions, unless your use case specifically requires the use of handles.
+:::warning[Discouraged]
+The use of [ElementHandle] is discouraged, use [Locator] objects and web-first assertions instead.
 :::
 
 When [ElementHandle] is required, it is recommended to fetch it with the
@@ -126,6 +113,20 @@ class_names = element_handle.get_attribute('class')
 assert 'highlighted' in class_names
 ```
 
+```csharp
+// Get the element handle
+var jsHandle = await page.WaitForSelectorAsync("#box");
+var elementHandle = jsHandle as ElementHandle;
+
+// Assert bounding box for the element
+var boundingBox = await elementHandle.BoundingBoxAsync();
+Assert.AreEqual(100, boundingBox.Width);
+
+// Assert attribute for the element
+var classNames = await elementHandle.GetAttributeAsync("class");
+Assert.True(classNames.Contains("highlighted"));
+```
+
 ## Handles as parameters
 
 Handles can be passed into the [`method: Page.evaluate`] and similar methods.
@@ -169,7 +170,7 @@ arg.put("myArray", myArrayHandle);
 arg.put("newElement", 2);
 page.evaluate("arg => arg.myArray.add(arg.newElement)", arg);
 
-// Release the object when it"s no longer needed.
+// Release the object when it is no longer needed.
 myArrayHandle.dispose();
 ```
 
@@ -213,6 +214,25 @@ page.evaluate("(arg) => arg.myArray.push(arg.newElement)", {
 my_array_handle.dispose()
 ```
 
+```csharp
+// Create new array in page.
+var myArrayHandle = await page.EvaluateHandleAsync(@"() => {
+    window.myArray = [1];
+    return myArray;
+}");
+
+// Get the length of the array.
+var length = await page.EvaluateAsync<int>("a => a.length", myArrayHandle);
+
+// Add one more element to the array using the handle
+await page.EvaluateAsync("arg => arg.myArray.add(arg.newElement)",
+    new { myArray = myArrayHandle, newElement = 2 });
+
+// Release the object when it is no longer needed.
+await myArrayHandle.DisposeAsync();
+```
+
+
 ## Handle Lifecycle
 
 Handles can be acquired using the page methods such as [`method: Page.evaluateHandle`],
@@ -235,3 +255,79 @@ unless page navigates or the handle is manually disposed via the [`method: JSHan
 - [`method: Page.evaluateHandle`]
 - [`method: Page.querySelector`]
 - [`method: Page.querySelectorAll`]
+
+
+## Locator vs ElementHandle
+
+:::caution
+We only recommend using [ElementHandle] in the rare cases when you need to perform extensive DOM traversal
+on a static page. For all user actions and assertions use locator instead.
+:::
+
+The difference between the [Locator] and [ElementHandle] is that the latter points to a particular element, while Locator captures the logic of how to retrieve that element.
+
+In the example below, handle points to a particular DOM element on page. If that element changes text or is used by React to render an entirely different component, handle is still pointing to that very stale DOM element. This can lead to unexpected behaviors.
+
+```js
+const handle = await page.$('text=Submit');
+// ...
+await handle.hover();
+await handle.click();
+```
+
+```java
+ElementHandle handle = page.querySelector("text=Submit");
+handle.hover();
+handle.click();
+```
+
+```python async
+handle = await page.query_selector("text=Submit")
+await handle.hover()
+await handle.click()
+```
+
+```python sync
+handle = page.query_selector("text=Submit")
+handle.hover()
+handle.click()
+```
+
+```csharp
+var handle = await page.QuerySelectorAsync("text=Submit");
+await handle.HoverAsync();
+await handle.ClickAsync();
+```
+
+With the locator, every time the locator is used, up-to-date DOM element is located in the page using the selector. So in the snippet below, underlying DOM element is going to be located twice.
+
+```js
+const locator = page.getByText('Submit');
+// ...
+await locator.hover();
+await locator.click();
+```
+
+```java
+Locator locator = page.getByText("Submit");
+locator.hover();
+locator.click();
+```
+
+```python async
+locator = page.get_by_text("Submit")
+await locator.hover()
+await locator.click()
+```
+
+```python sync
+locator = page.get_by_text("Submit")
+locator.hover()
+locator.click()
+```
+
+```csharp
+var locator = page.GetByText("Submit");
+await locator.HoverAsync();
+await locator.ClickAsync();
+```

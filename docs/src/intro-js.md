@@ -1,109 +1,317 @@
 ---
 id: intro
-title: "Getting Started"
+title: "Installation"
 ---
 
-<!-- TOC -->
-- [Release notes](./release-notes.md)
+## Introduction
 
-## Installation
+Playwright Test is an end-to-end test framework for modern web apps. It bundles test runner, assertions, isolation, parallelization and rich tooling. Playwright supports Chromium, WebKit and Firefox on Windows, Linux and macOS, locally or in CI, headless or headed, with native mobile emulation for Chrome (Android) and Mobile Safari.
 
-Use npm or Yarn to install Playwright in your Node.js project. See [system requirements](#system-requirements).
+**You will learn**
 
-```sh
-$ npm i -D playwright
+- [How to install Playwright](/intro.md#installing-playwright)
+- [What's installed](/intro.md#whats-installed)
+- [How to run the example test](/intro.md#running-the-example-test)
+- [How to open the HTML test report](/intro.md#html-test-reports)
+
+## Installing Playwright
+
+Get started by installing Playwright using one of the following methods.
+
+### Using npm, yarn or pnpm
+
+The command below either initializes a new project or adds Playwright to an existing one.
+
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+<TabItem value="npm">
+
+```bash
+npm init playwright@latest
 ```
 
-This single command downloads the Playwright NPM package and browser binaries for Chromium, Firefox and WebKit. To modify this behavior see [installation parameters](./installation.md).
+</TabItem>
 
-## Usage
+<TabItem value="yarn">
 
-Once installed, you can `require` Playwright in a Node.js script, and launch any of the 3 browsers (`chromium`, `firefox` and `webkit`).
-
-```js
-const { chromium } = require('playwright');
-
-(async () => {
-  const browser = await chromium.launch();
-  // Create pages, interact with UI elements, assert values
-  await browser.close();
-})();
+```bash
+yarn create playwright
 ```
 
-Playwright APIs are asynchronous and return Promise objects. Our code examples use [the async/await pattern](https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Asynchronous/Async_await) to ease readability. The code is wrapped in an unnamed async arrow function which is invoking itself.
+</TabItem>
 
-```js
-(async () => { // Start of async arrow function
-  // Function code
-  // ...
-})(); // End of the function and () to invoke itself
+<TabItem value="pnpm">
+
+```bash
+pnpm create playwright
 ```
 
-## First script
+</TabItem>
 
-In our first script, we will navigate to `whatsmyuseragent.org` and take a screenshot in WebKit.
+</Tabs>
 
-```js
-const { webkit } = require('playwright');
+When prompted, choose / confirm:
+- TypeScript or JavaScript (default: TypeScript)
+- Tests folder name (default: `tests`, or `e2e` if `tests` already exists)
+- Add a GitHub Actions workflow (recommended for CI)
+- Install Playwright browsers (default: yes)
 
-(async () => {
-  const browser = await webkit.launch();
-  const page = await browser.newPage();
-  await page.goto('http://whatsmyuseragent.org/');
-  await page.screenshot({ path: `example.png` });
-  await browser.close();
-})();
+You can re-run the command later; it does not overwrite existing tests.
+
+### Using the VS Code Extension
+
+You can also create and run tests with the [VS Code Extension](./getting-started-vscode.md).
+
+## What's Installed
+
+Playwright downloads required browser binaries and creates the scaffold below.
+
+```bash
+playwright.config.ts         # Test configuration
+package.json
+package-lock.json            # Or yarn.lock / pnpm-lock.yaml
+tests/
+  example.spec.ts            # Minimal example test
+tests-examples/
+  demo-todo-app.spec.ts      # Richer example tests
 ```
 
-By default, Playwright runs the browsers in headless mode. To see the browser UI, pass the `headless: false` flag while launching the browser. You can also use `slowMo` to slow down execution. Learn more in the debugging tools [section](./debug.md).
+The [playwright.config](./test-configuration.md) centralizes configuration: target browsers, timeouts, retries, projects, reporters and more. In existing projects dependencies are added to your current `package.json`.
 
-```js
-firefox.launch({ headless: false, slowMo: 50 });
+`tests/` contains a minimal starter test. `tests-examples/` provides richer samples (e.g. a todo app) to explore patterns.
+
+## Running the Example Test
+
+By default tests run headless in parallel across Chromium, Firefox and WebKit (configurable in [playwright.config](./test-configuration.md)). Output and aggregated results display in the terminal.
+
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+<TabItem value="npm">
+
+```bash
+npx playwright test
 ```
 
-## Record scripts
+</TabItem>
 
-Command Line Interface [CLI](./cli.md) can be used to record user interactions and generate JavaScript code.
+<TabItem value="yarn">
 
-```sh
-$ npx playwright codegen wikipedia.org
+```bash
+yarn playwright test
 ```
 
-## TypeScript support
+</TabItem>
 
-Playwright includes built-in support for TypeScript. Type definitions will be imported automatically. It is recommended to use type-checking to improve the IDE experience.
+<TabItem value="pnpm">
 
-### In JavaScript
-Add the following to the top of your JavaScript file to get type-checking in VS Code or WebStorm.
-
-```js
-//@ts-check
-// ...
+```bash
+pnpm exec playwright test
 ```
 
-Alternatively, you can use JSDoc to set types for variables.
+</TabItem>
 
-```js
-/** @type {import('playwright').Page} */
-let page;
+</Tabs>
+
+![tests running in command line](./images/getting-started/run-tests-cli.png)
+
+Tips:
+- See the browser window: add `--headed`.
+- Run a single project/browser: `--project=chromium`.
+- Run one file: `npx playwright test tests/example.spec.ts`.
+- Open testing UI: `--ui`.
+
+See [Running Tests](./running-tests.md) for details on filtering, headed mode, sharding and retries.
+
+## HTML Test Reports
+
+After a test run, the [HTML Reporter](./test-reporters.md#html-reporter) provides a dashboard filterable by the browser, passed, failed, skipped, flaky and more. Click a test to inspect errors, attachments and steps. It auto-opens only when failures occur; open manually with the command below.
+
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+<TabItem value="npm">
+
+```bash
+npx playwright show-report
 ```
 
-### In TypeScript
-TypeScript support will work out-of-the-box. Types can also be imported explicitly.
+</TabItem>
 
-```js
-let page: import('playwright').Page;
+<TabItem value="yarn">
+
+```bash
+yarn playwright show-report
 ```
+
+</TabItem>
+
+<TabItem value="pnpm">
+
+```bash
+pnpm exec playwright show-report
+```
+
+</TabItem>
+
+</Tabs>
+
+![HTML Report](./images/getting-started/html-report-basic.png)
+
+## Running the Example Test in UI Mode
+
+Run tests with [UI Mode](./test-ui-mode.md) for watch mode, live step view, time travel debugging and more.
+
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+
+<TabItem value="npm">
+
+```bash
+npx playwright test --ui
+```
+
+</TabItem>
+
+<TabItem value="yarn">
+
+```bash
+yarn playwright test --ui
+```
+
+</TabItem>
+
+<TabItem value="pnpm">
+
+```bash
+pnpm exec playwright test --ui
+```
+
+</TabItem>
+
+</Tabs>
+
+![UI Mode](./images/getting-started/ui-mode.png)
+
+See the [detailed guide on UI Mode](./test-ui-mode.md) for watch filters, step details and trace integration.
+
+## Updating Playwright
+
+Update Playwright and download new browser binaries and their dependencies:
+
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+
+<TabItem value="npm">
+
+```bash
+npm install -D @playwright/test@latest
+npx playwright install --with-deps
+```
+
+</TabItem>
+
+<TabItem value="yarn">
+
+```bash
+yarn add --dev @playwright/test@latest
+yarn playwright install --with-deps
+```
+
+</TabItem>
+
+<TabItem value="pnpm">
+
+```bash
+pnpm install --save-dev @playwright/test@latest
+pnpm exec playwright install --with-deps
+```
+
+</TabItem>
+
+</Tabs>
+
+Check your installed version:
+
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+
+<TabItem value="npm">
+
+```bash
+npx playwright --version
+```
+
+</TabItem>
+
+<TabItem value="yarn">
+
+```bash
+yarn playwright --version
+```
+
+</TabItem>
+
+<TabItem value="pnpm">
+
+```bash
+pnpm exec playwright --version
+```
+
+</TabItem>
+
+</Tabs>
 
 ## System requirements
 
-Playwright requires Node.js version 10.17 or above. The browser binaries for Chromium,
-Firefox and WebKit work across the 3 platforms (Windows, macOS, Linux):
+- Node.js: latest 20.x, 22.x or 24.x.
+- Windows 11+, Windows Server 2019+ or Windows Subsystem for Linux (WSL).
+- macOS 14 (Ventura) or later.
+- Debian 12 / 13, Ubuntu 22.04 / 24.04 (x86-64 or arm64).
 
-* **Windows**: Works with Windows and Windows Subsystem for Linux (WSL).
-* **macOS**: Requires 10.14 or above.
-* **Linux**: Depending on your Linux distribution, you might need to install additional
-  dependencies to run the browsers.
-  * Firefox requires Ubuntu 18.04+
-  * For Ubuntu 18.04, the additional dependencies are defined in [our Docker image](https://github.com/microsoft/playwright/blob/master/utils/docker/Dockerfile.bionic),
-    which is based on Ubuntu.
+## What's next
+
+- [Write tests using web-first assertions, fixtures and locators](./writing-tests.md)
+- [Run single or multiple tests; headed mode](./running-tests.md)
+- [Generate tests with Codegen](./codegen-intro.md)
+- [View a trace of your tests](./trace-viewer-intro.md)

@@ -17,14 +17,62 @@
 // @ts-check
 
 /** @typedef {{
- *    type: 'text' | 'li' | 'code' | 'properties' | 'h0' | 'h1' | 'h2' | 'h3' | 'h4' | 'note',
+ *    type: string,
  *    text?: string,
+ *    children?: MarkdownNode[],
  *    codeLang?: string,
- *    noteType?: string,
- *    lines?: string[],
- *    liType?: 'default' | 'bullet' | 'ordinal',
- *    children?: MarkdownNode[]
- *  }} MarkdownNode */
+ *  }} MarkdownBaseNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'text',
+ *    text: string,
+ *  }} MarkdownTextNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'h0' | 'h1' | 'h2' | 'h3' | 'h4',
+ *    text: string,
+ *    children: MarkdownNode[]
+ *  }} MarkdownHeaderNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'li',
+ *    text: string,
+ *    liType: 'default' | 'bullet' | 'ordinal',
+ *    children: MarkdownNode[]
+ *  }} MarkdownLiNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'code',
+ *    lines: string[],
+ *    codeLang: string,
+ *    title?: string,
+ *    highlight?: string,
+ *  }} MarkdownCodeNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'note',
+ *    noteType: string,
+ *  }} MarkdownNoteNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'null',
+ *  }} MarkdownNullNode */
+
+/** @typedef {MarkdownBaseNode & {
+ *    type: 'properties',
+ *    lines: string[],
+ *  }} MarkdownPropsNode */
+
+/** @typedef {{
+ * maxColumns?: number,
+ * omitLastCR?: boolean,
+ * flattenText?: boolean,
+ * renderCodeBlockTitlesInHeader?: boolean,
+ * noteMode?: 'docusaurus' | 'compact',
+ * }} RenderOptions
+ */
+
+/** @typedef {MarkdownTextNode | MarkdownLiNode | MarkdownCodeNode | MarkdownNoteNode | MarkdownHeaderNode | MarkdownNullNode | MarkdownPropsNode } MarkdownNode */
 
 function flattenWrappedLines(content) {
   const inLines = content.replace(/\r\n/g, '\n').split('\n');
@@ -33,7 +81,8 @@ function flattenWrappedLines(content) {
   let outLineTokens = [];
   for (const line of inLines) {
     const trimmedLine = line.trim();
-    let singleLineExpression = line.startsWith('#');
+    const singleLineExpression = line.startsWith('#');
+    const codeBlockBoundary = trimmedLine.startsWith('```') || trimmedLine.startsWith('---') || trimmedLine.startsWith(':::');
     let flushLastParagraph = !trimmedLine
       || trimmedLine.startsWith('1.')
       || trimmedLine.startsWith('<')
@@ -43,21 +92,21 @@ function flattenWrappedLines(content) {
       || trimmedLine.startsWith('*')
       || line.match(/\[[^\]]+\]:.*/)
       || singleLineExpression;
-    if (trimmedLine.startsWith('```') || trimmedLine.startsWith('---') || trimmedLine.startsWith(':::')) {
+    if (codeBlockBoundary) {
       inCodeBlock = !inCodeBlock;
       flushLastParagraph = true;
     }
     if (flushLastParagraph && outLineTokens.length) {
-      outLines.push(outLineTokens.join(' '));
+      outLines.push(outLineTokens.join('↵'));
       outLineTokens = [];
     }
-    if (inCodeBlock || singleLineExpression)
+    if (inCodeBlock || singleLineExpression || codeBlockBoundary)
       outLines.push(line);
     else if (trimmedLine)
       outLineTokens.push(outLineTokens.length ? line.trim() : line);
   }
   if (outLineTokens.length)
-    outLines.push(outLineTokens.join(' '));
+    outLines.push(outLineTokens.join('↵'));
   return outLines;
 }
 
@@ -76,7 +125,7 @@ function buildTree(lines) {
   const headerStack = [root];
 
   /** @type {{ indent: string, node: MarkdownNode }[]} */
-  let sectionStack = [];
+  const sectionStack = [];
 
   /**
    * @param {string} indent
@@ -85,7 +134,7 @@ function buildTree(lines) {
   const appendNode = (indent, node) => {
     while (sectionStack.length && sectionStack[0].indent.length >= indent.length)
       sectionStack.shift();
-    const parentNode = sectionStack.length ? sectionStack[0].node :headerStack[0];
+    const parentNode = sectionStack.length ? sectionStack[0].node : headerStack[0];
     if (!parentNode.children)
       parentNode.children = [];
     parentNode.children.push(node);
@@ -109,24 +158,27 @@ function buildTree(lines) {
         else
           break;
       }
-      headerStack[0].children.push(node);
+      /** @type {MarkdownNode[]}*/(headerStack[0].children).push(node);
       headerStack.unshift(node);
       continue;
     }
 
     // Remaining items respect indent-based nesting.
-    const [, indent, content] = line.match('^([ ]*)(.*)');
+    const [, indent, content] = /** @type {string[]} */ (line.match('^([ ]*)(.*)'));
     if (content.startsWith('```')) {
+      const [codeLang, title, highlight] = parseCodeBlockMetadata(content);
       /** @type {MarkdownNode} */
       const node = {
         type: 'code',
         lines: [],
-        codeLang: content.substring(3)
+        codeLang,
+        title,
+        highlight,
       };
       line = lines[++i];
       while (!line.trim().startsWith('```')) {
         if (line && !line.startsWith(indent)) {
-          const from = Math.max(0, i - 5)
+          const from = Math.max(0, i - 5);
           const to = Math.min(lines.length, from + 10);
           const snippet = lines.slice(from, to);
           throw new Error(`Bad code block: ${snippet.join('\n')}`);
@@ -142,15 +194,15 @@ function buildTree(lines) {
 
     if (content.startsWith(':::')) {
       /** @type {MarkdownNode} */
-      const node = {
+      const node = /** @type {MarkdownNoteNode} */ ({
         type: 'note',
         noteType: content.substring(3)
-      };
+      });
       line = lines[++i];
       const tokens = [];
       while (!line.trim().startsWith(':::')) {
         if (!line.startsWith(indent)) {
-          const from = Math.max(0, i - 5)
+          const from = Math.max(0, i - 5);
           const to = Math.min(lines.length, from + 10);
           const snippet = lines.slice(from, to);
           throw new Error(`Bad comment block: ${snippet.join('\n')}`);
@@ -158,7 +210,7 @@ function buildTree(lines) {
         tokens.push(line.substring(indent.length));
         line = lines[++i];
       }
-      node.text = tokens.join(' ');
+      node.children = parse(tokens.join('\n'));
       appendNode(indent, node);
       continue;
     }
@@ -183,18 +235,40 @@ function buildTree(lines) {
     const liType = content.match(/^(-|1.|\*) /);
     const node = /** @type {MarkdownNode} */({ type: 'text', text: content });
     if (liType) {
-      node.type = 'li';
-      node.text = content.substring(liType[0].length);
+      const liNode = /** @type {MarkdownLiNode} */(node);
+      liNode.type = 'li';
+      liNode.text = content.substring(liType[0].length);
       if (content.startsWith('1.'))
-        node.liType = 'ordinal';
+        liNode.liType = 'ordinal';
       else if (content.startsWith('*'))
-        node.liType = 'bullet';
+        liNode.liType = 'bullet';
       else
-        node.liType = 'default';
+        liNode.liType = 'default';
+    }
+    const match = node.text?.match(/\*\*langs: (.*)\*\*(.*)/);
+    if (match) {
+      node.codeLang = match[1];
+      node.text = match[2];
     }
     appendNode(indent, node);
   }
   return root.children;
+}
+
+/**
+ * @param {String} firstLine
+ * @returns {[string, string|undefined, string|undefined]}
+ */
+function parseCodeBlockMetadata(firstLine) {
+  const withoutBackticks = firstLine.substring(3);
+  const titleMatch = withoutBackticks.match(/ title="(.+)"/);
+  const highlightMatch = withoutBackticks.match(/\{.*\}/);
+
+  let codeLang = withoutBackticks;
+  if (titleMatch || highlightMatch)
+    codeLang = withoutBackticks.substring(0, titleMatch?.index ?? highlightMatch?.index);
+
+  return [codeLang, titleMatch?.[1], highlightMatch?.[0]];
 }
 
 /**
@@ -206,15 +280,19 @@ function parse(content) {
 
 /**
  * @param {MarkdownNode[]} nodes
- * @param {number=} maxColumns
+ * @param {RenderOptions=} options
  */
-function render(nodes, maxColumns) {
+function render(nodes, options) {
   const result = [];
   let lastNode;
-  for (let node of nodes) {
-    innerRenderMdNode('', node, lastNode, result, maxColumns);
+  for (const node of nodes) {
+    if (node.type === 'null')
+      continue;
+    innerRenderMdNode('', node, /** @type {MarkdownNode} */ (lastNode), result, options);
     lastNode = node;
   }
+  if (!options?.omitLastCR && result[result.length - 1] !== '')
+    result.push('');
   return result.join('\n');
 }
 
@@ -222,22 +300,23 @@ function render(nodes, maxColumns) {
  * @param {string} indent
  * @param {MarkdownNode} node
  * @param {MarkdownNode} lastNode
- * @param {number=} maxColumns
+ * @param {RenderOptions=} options
  * @param {string[]} result
  */
-function innerRenderMdNode(indent, node, lastNode, result, maxColumns) {
+function innerRenderMdNode(indent, node, lastNode, result, options) {
   const newLine = () => {
-    if (result.length && result[result.length - 1] !== '')
-      result.push('');
+    if (result.length && (result[result.length - 1] || '').trim() !== '')
+      result.push(indent);
   };
 
   if (node.type.startsWith('h')) {
+    const headerNode = /** @type {MarkdownHeaderNode} */ (node);
     newLine();
     const depth = +node.type.substring(1);
-    result.push(`${'#'.repeat(depth)} ${node.text}`);
+    result.push(`${'#'.repeat(depth)} ${headerNode.text}`);
     let lastNode = node;
     for (const child of node.children || []) {
-      innerRenderMdNode('', child, lastNode, result, maxColumns);
+      innerRenderMdNode('', child, lastNode, result, options);
       lastNode = child;
     }
   }
@@ -249,14 +328,15 @@ function innerRenderMdNode(indent, node, lastNode, result, maxColumns) {
     const bothLinks = node.text.match(/\[[^\]]+\]:/) && lastNode && lastNode.type === 'text' && lastNode.text.match(/\[[^\]]+\]:/);
     if (!bothTables && !bothGen && !bothComments && !bothLinks && lastNode && lastNode.text)
       newLine();
-      for (const line of node.text.split('\n'))
-        result.push(wrapText(line, maxColumns, indent));
+    result.push(wrapText(node.text, options, indent));
     return;
   }
 
   if (node.type === 'code') {
     newLine();
-    result.push(`${indent}\`\`\`${node.codeLang}`);
+    result.push(`${indent}\`\`\`${node.codeLang}${(options?.renderCodeBlockTitlesInHeader && node.title) ? ' title="' + node.title + '"' : ''}${node.highlight ? ' ' + node.highlight : ''}`);
+    if (!options?.renderCodeBlockTitlesInHeader && node.title)
+      result.push(`${indent}// ${node.title}`);
     for (const line of node.lines)
       result.push(indent + line);
     result.push(`${indent}\`\`\``);
@@ -266,9 +346,21 @@ function innerRenderMdNode(indent, node, lastNode, result, maxColumns) {
 
   if (node.type === 'note') {
     newLine();
-    result.push(`${indent}:::${node.noteType}`);
-    result.push(`${wrapText(node.text, maxColumns, indent)}`);
-    result.push(`${indent}:::`);
+    if (options?.noteMode !== 'compact')
+      result.push(`${indent}:::${node.noteType}`);
+    const children = node.children ?? [];
+    if (options?.noteMode === 'compact') {
+      children[0] = {
+        type: 'text',
+        text: `**NOTE** ${children[0].text}`,
+      }
+    }
+    for (const child of children) {
+      innerRenderMdNode(indent, child, lastNode, result, options);
+      lastNode = child;
+    }
+    if (options?.noteMode !== 'compact')
+      result.push(`${indent}:::`);
     newLine();
     return;
   }
@@ -289,10 +381,10 @@ function innerRenderMdNode(indent, node, lastNode, result, maxColumns) {
       case 'default': char = '-'; break;
       case 'ordinal': char = '1.'; break;
     }
-    result.push(`${wrapText(node.text, maxColumns, `${indent}${char} `)}`);
+    result.push(wrapText(node.text, options, `${indent}${char} `));
     const newIndent = indent + ' '.repeat(char.length + 1);
     for (const child of node.children || []) {
-      innerRenderMdNode(newIndent, child, lastNode, result, maxColumns);
+      innerRenderMdNode(newIndent, child, lastNode, result, options);
       lastNode = child;
     }
   }
@@ -313,18 +405,37 @@ function tokenizeNoBreakLinks(text) {
 
 /**
  * @param {string} text
- * @param {number=} maxColumns
- * @param {string=} prefix
+ * @param {RenderOptions|undefined} options
+ * @param {string} prefix
+ * @returns {string}
  */
-function wrapText(text, maxColumns = 0, prefix = '') {
+function wrapText(text, options, prefix) {
+  if (options?.flattenText)
+    text = text.replace(/↵/g, ' ');
+  const lines = text.split(/[\n↵]/);
+  const result = /** @type {string[]} */([]);
+  const indent = ' '.repeat(prefix.length);
+  for (const line of lines)
+    result.push(wrapLine(line, options?.maxColumns, result.length ? indent : prefix));
+
+  return result.join('\n');
+}
+
+/**
+ * @param {string} textLine
+ * @param {number|undefined} maxColumns
+ * @param {string} prefix
+ * @returns {string}
+ */
+function wrapLine(textLine, maxColumns, prefix) {
   if (!maxColumns)
-    return prefix + text;
-  if (text.trim().startsWith('|'))
-    return prefix + text;
+    return prefix + textLine;
+  if (textLine.trim().startsWith('|'))
+    return prefix + textLine;
   const indent = ' '.repeat(prefix.length);
   const lines = [];
   maxColumns -= indent.length;
-  const words = tokenizeNoBreakLinks(text);
+  const words = tokenizeNoBreakLinks(textLine);
   let line = '';
   for (const word of words) {
     if (line.length && line.length + word.length < maxColumns) {
@@ -370,19 +481,32 @@ function visit(node, visitor, depth = 0) {
 
 /**
  * @param {MarkdownNode[]} nodes
- * @returns {string}
+ * @param {string} language
+ * @return {MarkdownNode[]}
  */
-function generateToc(nodes) {
-  const result = [];
-  visitAll(nodes, (node, depth) => {
-    if (node.type === 'h1' || node.type === 'h2') {
-      let link = node.text.toLowerCase();
-      link = link.replace(/[ ]+/g, '-');
-      link = link.replace(/[^\w-_]/g, '');
-      result.push(`${' '.repeat(depth * 2)}- [${node.text}](#${link})`);
+function filterNodesForLanguage(nodes, language) {
+  const result = nodes.filter(node => {
+    if (!node.children)
+      return true;
+    for (let i = 0; i < node.children.length; i++) {
+      const child = node.children[i];
+      if (child.type !== 'li' || child.liType !== 'bullet' || !child.text.startsWith('langs:'))
+        continue;
+      const onlyText = child.text.substring('langs:'.length);
+      if (!onlyText)
+        return true;
+      const only = onlyText.split(',').map(l => l.trim());
+      node.children.splice(i, 1);
+      return only.includes(language);
     }
+    return true;
   });
-  return result.join('\n');
+  result.forEach(n => {
+    if (!n.children)
+      return;
+    n.children = filterNodesForLanguage(n.children, language);
+  });
+  return result;
 }
 
-module.exports = { parse, render, clone, visitAll, visit, generateToc };
+module.exports = { parse, render, clone, visitAll, visit, filterNodesForLanguage, wrapText };
